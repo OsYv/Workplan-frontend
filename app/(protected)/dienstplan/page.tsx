@@ -58,10 +58,7 @@ type ShiftTypeOption = {
   is_flexible_default: boolean;
 };
 
-type SelectedCell = {
-  user_id: number;
-  date: string;
-} | null;
+type SelectedCell = { user_id: number; date: string } | null;
 
 const DEFAULT_COLOR = "#2563eb";
 
@@ -92,10 +89,12 @@ function formatDayHeader(dateIso: string) {
   });
 }
 
-function displayUser(u: UserOption) {
-  const full =
-    `${u.first_name?.trim() ?? ""} ${u.last_name?.trim() ?? ""}`.trim();
+function isToday(dateIso: string) {
+  return dateIso === todayIso();
+}
 
+function displayUser(u: UserOption) {
+  const full = `${u.first_name?.trim() ?? ""} ${u.last_name?.trim() ?? ""}`.trim();
   return full || u.name?.trim() || u.email || `User ${u.id}`;
 }
 
@@ -118,12 +117,10 @@ function userAvatarColor(seed: string) {
     "bg-amber-100 text-amber-700",
     "bg-lime-100 text-lime-700",
   ];
-
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = seed.charCodeAt(i) + ((hash << 5) - hash);
   }
-
   return colors[Math.abs(hash) % colors.length];
 }
 
@@ -138,16 +135,12 @@ function shiftCardStyle(color?: string | null) {
 
 export default function DienstplanPage() {
   const [forbidden, setForbidden] = useState(false);
-
   const [weekStart, setWeekStart] = useState(startOfWeekIso());
   const [items, setItems] = useState<Shift[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [shiftTypes, setShiftTypes] = useState<ShiftTypeOption[]>([]);
-
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(
-    null
-  );
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
   const [quickShiftTypeId, setQuickShiftTypeId] = useState("");
@@ -187,50 +180,31 @@ export default function DienstplanPage() {
         api.shiftTypes(),
       ]);
 
-      const normalizedUsers = Array.isArray(usersData)
-        ? usersData
-        : usersData?.items ?? [];
-
-      const normalizedShiftTypes = Array.isArray(shiftTypesData)
-        ? shiftTypesData
-        : shiftTypesData?.items ?? [];
+      const normalizedUsers = Array.isArray(usersData) ? usersData : usersData?.items ?? [];
+      const normalizedShiftTypes = Array.isArray(shiftTypesData) ? shiftTypesData : shiftTypesData?.items ?? [];
 
       setUsers(normalizedUsers);
       setShiftTypes(normalizedShiftTypes);
 
       if (normalizedUsers.length > 0) {
-        setForm((prev) => ({
-          ...prev,
-          user_id: prev.user_id || String(normalizedUsers[0].id),
-        }));
+        setForm((prev) => ({ ...prev, user_id: prev.user_id || String(normalizedUsers[0].id) }));
       }
-
       if (normalizedShiftTypes.length > 0) {
-        setForm((prev) => ({
-          ...prev,
-          shift_type_id: prev.shift_type_id || String(normalizedShiftTypes[0].id),
-        }));
+        setForm((prev) => ({ ...prev, shift_type_id: prev.shift_type_id || String(normalizedShiftTypes[0].id) }));
       }
     } catch (e: any) {
-      setMsg({
-        type: "err",
-        text: e?.message ?? "User oder Schichttypen konnten nicht geladen werden",
-      });
+      setMsg({ type: "err", text: e?.message ?? "Daten konnten nicht geladen werden" });
     }
   }
 
   async function loadShifts() {
     setLoading(true);
     setMsg(null);
-
     try {
       const data = await api.shifts(weekStart, weekEnd);
       setItems(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setMsg({
-        type: "err",
-        text: e?.message ?? "Dienstplan konnte nicht geladen werden",
-      });
+      setMsg({ type: "err", text: e?.message ?? "Dienstplan konnte nicht geladen werden" });
     } finally {
       setLoading(false);
     }
@@ -248,10 +222,7 @@ export default function DienstplanPage() {
   const groupedUsers = useMemo(() => {
     return [...users]
       .filter((u) => u.is_active !== false)
-      .map((u) => ({
-        id: u.id,
-        name: displayUser(u),
-      }))
+      .map((u) => ({ id: u.id, name: displayUser(u) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [users]);
 
@@ -262,7 +233,6 @@ export default function DienstplanPage() {
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-
     try {
       await api.createShift({
         user_id: Number(form.user_id),
@@ -273,61 +243,47 @@ export default function DienstplanPage() {
         is_flexible: form.is_flexible,
         notes: form.notes || null,
       });
-
       setMsg({ type: "ok", text: "✅ Schicht erstellt" });
-
-      setForm((prev) => ({
-        ...prev,
-        notes: "",
-      }));
-
+      setForm((prev) => ({ ...prev, notes: "" }));
       await loadShifts();
     } catch (e: any) {
-      setMsg({
-        type: "err",
-        text: e?.message ?? "Schicht konnte nicht erstellt werden",
-      });
+      setMsg({ type: "err", text: e?.message ?? "Schicht konnte nicht erstellt werden" });
     }
   }
 
   async function onDelete(id: number) {
     const ok = window.confirm("Schicht wirklich löschen?");
     if (!ok) return;
-
     try {
       await api.deleteShift(id);
       setMsg({ type: "ok", text: "✅ Schicht gelöscht" });
       await loadShifts();
     } catch (e: any) {
-      setMsg({
-        type: "err",
-        text: e?.message ?? "Schicht konnte nicht gelöscht werden",
-      });
+      setMsg({ type: "err", text: e?.message ?? "Schicht konnte nicht gelöscht werden" });
     }
   }
 
-  function prevWeek() {
-    setWeekStart(addDays(weekStart, -7));
-  }
-
-  function nextWeek() {
-    setWeekStart(addDays(weekStart, 7));
-  }
+  function prevWeek() { setWeekStart(addDays(weekStart, -7)); }
+  function nextWeek() { setWeekStart(addDays(weekStart, 7)); }
 
   function openQuickCreate(userId: number, day: string) {
     setSelectedCell({ user_id: userId, date: day });
+    setQuickShiftTypeId(shiftTypes[0] ? String(shiftTypes[0].id) : "");
+    setQuickNotes("");
+    setMsg(null);
+  }
+
+  function closeQuickCreate() {
+    setSelectedCell(null);
     setQuickShiftTypeId("");
     setQuickNotes("");
   }
 
   async function saveQuickShift() {
     if (!selectedCell || !quickShiftTypeId) return;
-
     const st = shiftTypes.find((x) => String(x.id) === quickShiftTypeId);
     if (!st) return;
-
     setQuickSaving(true);
-
     try {
       await api.createShift({
         user_id: selectedCell.user_id,
@@ -338,17 +294,11 @@ export default function DienstplanPage() {
         is_flexible: st.is_flexible_default,
         notes: quickNotes || null,
       });
-
       setMsg({ type: "ok", text: "✅ Schicht eingetragen" });
-      setSelectedCell(null);
-      setQuickShiftTypeId("");
-      setQuickNotes("");
+      closeQuickCreate();
       await loadShifts();
     } catch (e: any) {
-      setMsg({
-        type: "err",
-        text: e?.message ?? "Schicht konnte nicht eingetragen werden",
-      });
+      setMsg({ type: "err", text: e?.message ?? "Schicht konnte nicht eingetragen werden" });
     } finally {
       setQuickSaving(false);
     }
@@ -358,8 +308,7 @@ export default function DienstplanPage() {
     ? groupedUsers.find((x) => x.id === selectedCell.user_id)?.name ?? "—"
     : "—";
 
-  const selectedShiftType =
-    shiftTypes.find((x) => String(x.id) === quickShiftTypeId) ?? null;
+  const selectedShiftType = shiftTypes.find((x) => String(x.id) === quickShiftTypeId) ?? null;
 
   if (forbidden) {
     return (
@@ -379,36 +328,23 @@ export default function DienstplanPage() {
       <div className="grid gap-6">
         <PageHeader
           title="Dienstplan"
-          subtitle="Wochenansicht für Schichten im Kalenderstil."
+          subtitle="Wochenansicht – auf eine Zelle klicken um schnell eine Schicht einzutragen."
           actions={
             <>
-              <AppButton
-                type="button"
-                variant="secondary"
-                onClick={prevWeek}
-                className="px-4 py-2 text-sm"
-              >
+              <AppButton type="button" variant="secondary" onClick={prevWeek} className="px-4 py-2 text-sm">
                 ← Woche zurück
               </AppButton>
-              <AppButton
-                type="button"
-                onClick={() => setWeekStart(startOfWeekIso())}
-                className="px-4 py-2 text-sm"
-              >
+              <AppButton type="button" onClick={() => setWeekStart(startOfWeekIso())} className="px-4 py-2 text-sm">
                 Heute
               </AppButton>
-              <AppButton
-                type="button"
-                variant="secondary"
-                onClick={nextWeek}
-                className="px-4 py-2 text-sm"
-              >
+              <AppButton type="button" variant="secondary" onClick={nextWeek} className="px-4 py-2 text-sm">
                 Woche vor →
               </AppButton>
             </>
           }
         />
 
+        {/* Neue Schicht (detailliertes Formular) */}
         <SectionCard title="Neue Schicht anlegen">
           <form onSubmit={onCreate} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <FormField label="Mitarbeiter" htmlFor="user_id">
@@ -424,9 +360,7 @@ export default function DienstplanPage() {
                   .filter((u) => u.is_active !== false)
                   .sort((a, b) => displayUser(a).localeCompare(displayUser(b)))
                   .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {displayUser(u)}
-                    </option>
+                    <option key={u.id} value={u.id}>{displayUser(u)}</option>
                   ))}
               </SelectInput>
             </FormField>
@@ -441,9 +375,7 @@ export default function DienstplanPage() {
               >
                 <option value="">Bitte wählen</option>
                 {shiftTypes.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.name}
-                  </option>
+                  <option key={st.id} value={st.id}>{st.name}</option>
                 ))}
               </SelectInput>
             </FormField>
@@ -460,9 +392,7 @@ export default function DienstplanPage() {
             </FormField>
 
             <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-700">
-                Flexibel
-              </label>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Flexibel</label>
               <CheckboxInput
                 id="flex"
                 title="Flexibel"
@@ -514,167 +444,113 @@ export default function DienstplanPage() {
 
         {msg && <AlertBox variant={msg.type}>{msg.text}</AlertBox>}
 
+        {/* Schnell-Eintragen Panel (Inline statt Modal) */}
         {selectedCell && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-              <h2 className="text-lg font-bold text-slate-900">Schicht eintragen</h2>
-
-              <div className="mt-4 space-y-1 text-sm text-slate-600">
-                <div>
-                  Mitarbeiter:{" "}
-                  <span className="font-semibold text-slate-900">{selectedUserName}</span>
-                </div>
-                <div>
-                  Datum:{" "}
-                  <span className="font-semibold text-slate-900">{selectedCell.date}</span>
-                </div>
+          <SectionCard
+            title="Schicht schnell eintragen"
+            right={
+              <AppButton type="button" variant="secondary" onClick={closeQuickCreate} className="px-3 py-1 text-xs">
+                Schliessen
+              </AppButton>
+            }
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                <div>Mitarbeiter: <span className="font-semibold text-slate-900">{selectedUserName}</span></div>
+                <div className="mt-1">Datum: <span className="font-semibold text-slate-900">{selectedCell.date}</span></div>
               </div>
 
-              <div className="mt-4">
-                <FormField label="Schichtvorlage" htmlFor="quick_shift_type">
-                  <SelectInput
-                    id="quick_shift_type"
-                    title="Schichtvorlage"
-                    value={quickShiftTypeId}
-                    onChange={(e) => setQuickShiftTypeId(e.target.value)}
-                  >
-                    <option value="">Bitte wählen</option>
-                    {shiftTypes.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </FormField>
-              </div>
-
-              {selectedShiftType ? (
-                <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+              {selectedShiftType && (
+                <div
+                  className="rounded-xl px-4 py-3 text-sm ring-1 ring-slate-200"
+                  style={shiftCardStyle(selectedShiftType.color)}
+                >
                   <div className="flex items-center gap-2">
                     <div
                       className="h-4 w-4 rounded-full ring-1 ring-slate-200"
                       style={{ backgroundColor: selectedShiftType.color || DEFAULT_COLOR }}
                     />
-                    <span className="font-semibold text-slate-900">
-                      {selectedShiftType.name}
-                    </span>
+                    <span className="font-semibold">{selectedShiftType.name}</span>
                   </div>
-
-                  <div className="mt-2">
-                    Zeit:{" "}
-                    <span className="font-semibold text-slate-900">
-                      {selectedShiftType.fixed_start_time &&
-                      selectedShiftType.fixed_end_time
-                        ? `${selectedShiftType.fixed_start_time} - ${selectedShiftType.fixed_end_time}`
-                        : "08:00 - 17:00"}
-                    </span>
-                  </div>
-
                   <div className="mt-1">
-                    Pause:{" "}
-                    <span className="font-semibold text-slate-900">
-                      {selectedShiftType.break_minutes_default ?? 0} min
-                    </span>
+                    Zeit: {selectedShiftType.fixed_start_time && selectedShiftType.fixed_end_time
+                      ? `${selectedShiftType.fixed_start_time} - ${selectedShiftType.fixed_end_time}`
+                      : "08:00 - 17:00"}
                   </div>
-
-                  <div className="mt-1">
-                    Stunden zählen:{" "}
-                    <span className="font-semibold text-slate-900">
-                      {selectedShiftType.counts_as_work ? "Ja" : "Nein"}
-                    </span>
-                  </div>
-
-                  <div className="mt-1">
-                    Flexibel:{" "}
-                    <span className="font-semibold text-slate-900">
-                      {selectedShiftType.is_flexible_default ? "Ja" : "Nein"}
-                    </span>
-                  </div>
+                  <div className="mt-1">Pause: {selectedShiftType.break_minutes_default ?? 0} min</div>
+                  <div className="mt-1">Stunden zählen: {selectedShiftType.counts_as_work ? "Ja" : "Nein"}</div>
                 </div>
-              ) : null}
+              )}
 
-              <div className="mt-4">
-                <FormField label="Notiz" htmlFor="quick_notes">
-                  <TextInput
-                    id="quick_notes"
-                    title="Notiz"
-                    value={quickNotes}
-                    onChange={(e) => setQuickNotes(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </FormField>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-2">
-                <AppButton
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setSelectedCell(null);
-                    setQuickShiftTypeId("");
-                    setQuickNotes("");
-                  }}
+              <FormField label="Schichtvorlage" htmlFor="quick_shift_type">
+                <SelectInput
+                  id="quick_shift_type"
+                  title="Schichtvorlage"
+                  value={quickShiftTypeId}
+                  onChange={(e) => setQuickShiftTypeId(e.target.value)}
                 >
-                  Abbrechen
-                </AppButton>
+                  <option value="">Bitte wählen</option>
+                  {shiftTypes.map((st) => (
+                    <option key={st.id} value={st.id}>{st.name}</option>
+                  ))}
+                </SelectInput>
+              </FormField>
 
+              <FormField label="Notiz" htmlFor="quick_notes">
+                <TextInput
+                  id="quick_notes"
+                  title="Notiz"
+                  value={quickNotes}
+                  onChange={(e) => setQuickNotes(e.target.value)}
+                  placeholder="Optional"
+                />
+              </FormField>
+
+              <div className="flex gap-3 md:col-span-2">
                 <AppButton
                   type="button"
                   onClick={saveQuickShift}
                   disabled={!quickShiftTypeId || quickSaving}
                 >
-                  {quickSaving ? "Speichert..." : "Speichern"}
+                  {quickSaving ? "Speichert..." : "Schicht eintragen"}
+                </AppButton>
+                <AppButton type="button" variant="secondary" onClick={closeQuickCreate}>
+                  Abbrechen
                 </AppButton>
               </div>
             </div>
-          </div>
+          </SectionCard>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+        {/* Kalender + Legende */}
+        <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+
+          {/* Schichtvorlagen Legende */}
           <SectionCard
             title="Schichtvorlagen"
             right={<Badge variant="slate">{shiftTypes.length}</Badge>}
           >
             <div className="space-y-3">
               {shiftTypes.length === 0 ? (
-                <AlertBox variant="info">
-                  Keine Schichttypen gefunden.
-                </AlertBox>
+                <AlertBox variant="info">Keine Schichttypen gefunden.</AlertBox>
               ) : (
                 shiftTypes.map((st) => (
                   <div
                     key={st.id}
                     className="rounded-xl p-3 shadow-sm ring-1 ring-slate-200"
-                    style={{
-                      borderLeft: `4px solid ${st.color || DEFAULT_COLOR}`,
-                      backgroundColor: `${st.color || DEFAULT_COLOR}12`,
-                    }}
+                    style={{ borderLeft: `4px solid ${st.color || DEFAULT_COLOR}`, backgroundColor: `${st.color || DEFAULT_COLOR}12` }}
                   >
                     <div className="flex items-center gap-2">
-                      <div
-                        className="h-4 w-4 rounded-full ring-1 ring-slate-200"
-                        style={{ backgroundColor: st.color || DEFAULT_COLOR }}
-                      />
-                      <div className="font-semibold">{st.name}</div>
+                      <div className="h-4 w-4 rounded-full ring-1 ring-slate-200" style={{ backgroundColor: st.color || DEFAULT_COLOR }} />
+                      <div className="font-semibold text-slate-900">{st.name}</div>
                     </div>
-
-                    <div className="mt-1 text-xs opacity-80">
-                      Standardpause: {st.break_minutes_default ?? 0} min
-                    </div>
-
-                    <div className="mt-1 text-xs opacity-80">
-                      Zeit:{" "}
+                    <div className="mt-1 text-xs text-slate-700">
                       {st.fixed_start_time && st.fixed_end_time
-                        ? `${st.fixed_start_time} - ${st.fixed_end_time}`
-                        : "keine fixe Zeit"}
+                        ? `${st.fixed_start_time} – ${st.fixed_end_time}`
+                        : "Keine fixe Zeit"}
                     </div>
-
-                    <div className="mt-1 text-xs opacity-80">
-                      Stunden zählen: {st.counts_as_work ? "Ja" : "Nein"}
-                    </div>
-
-                    <div className="mt-1 text-xs opacity-80">
-                      Flexibel: {st.is_flexible_default ? "Ja" : "Nein"}
+                    <div className="mt-1 text-xs text-slate-700">
+                      Pause: {st.break_minutes_default ?? 0} min · {st.counts_as_work ? "Zählt" : "Zählt nicht"}
                     </div>
                   </div>
                 ))
@@ -682,64 +558,73 @@ export default function DienstplanPage() {
             </div>
           </SectionCard>
 
+          {/* Kalender-Raster */}
           <SectionCard
             title="Kalender"
-            right={
-              loading ? <Badge variant="slate">Lade…</Badge> : <Badge variant="green">OK</Badge>
-            }
+            right={loading ? <Badge variant="slate">Lade…</Badge> : <Badge variant="green">OK</Badge>}
           >
             <div className="overflow-x-auto">
-              <div className="min-w-[1200px]">
-                <div className="grid grid-cols-[260px_repeat(7,minmax(130px,1fr))] border-b border-slate-200 bg-slate-50">
-                  <div className="p-4 font-bold text-slate-900">Mitarbeiter</div>
+              <div className="min-w-[900px]">
+                {/* Header Zeile */}
+                <div className="grid grid-cols-[200px_repeat(7,minmax(110px,1fr))] border-b border-slate-200 bg-slate-50">
+                  <div className="p-3 text-sm font-bold text-slate-600">Mitarbeiter</div>
                   {weekDays.map((day) => (
                     <div
                       key={day}
-                      className="border-l border-slate-200 p-4 text-center font-bold text-slate-900"
+                      className={`border-l border-slate-200 p-3 text-center text-sm font-bold ${
+                        isToday(day) ? "bg-green-50 text-green-800" : "text-slate-700"
+                      }`}
                     >
                       {formatDayHeader(day)}
+                      {isToday(day) && (
+                        <div className="mt-1 text-xs font-normal text-green-600">Heute</div>
+                      )}
                     </div>
                   ))}
                 </div>
 
+                {/* Mitarbeiter Zeilen */}
                 {loading ? (
                   <div className="p-6 text-sm text-slate-500">Lade Dienstplan…</div>
                 ) : groupedUsers.length === 0 ? (
-                  <div className="p-6 text-sm text-slate-500">Keine Mitarbeiter gefunden.</div>
+                  <div className="p-6 text-sm text-slate-500">Keine aktiven Mitarbeiter gefunden.</div>
                 ) : (
                   groupedUsers.map((u) => (
                     <div
                       key={u.id}
-                      className="grid grid-cols-[260px_repeat(7,minmax(130px,1fr))] border-b border-slate-200 last:border-b-0"
+                      className="grid grid-cols-[200px_repeat(7,minmax(110px,1fr))] border-b border-slate-200 last:border-b-0"
                     >
-                      <div className="flex items-center border-r border-slate-200 p-4">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`grid h-10 w-10 place-items-center rounded-full text-sm font-bold ${userAvatarColor(
-                              u.name
-                            )}`}
-                          >
+                      {/* Name */}
+                      <div className="flex items-center border-r border-slate-200 p-3">
+                        <div className="flex items-center gap-2">
+                          <div className={`grid h-9 w-9 flex-shrink-0 place-items-center rounded-full text-xs font-bold ${userAvatarColor(u.name)}`}>
                             {getInitials(u.name)}
                           </div>
-
-                          <div>
-                            <div className="font-semibold text-slate-900">{u.name}</div>
-                          </div>
+                          <div className="text-sm font-semibold text-slate-900 leading-tight">{u.name}</div>
                         </div>
                       </div>
 
+                      {/* Tage */}
                       {weekDays.map((day) => {
                         const dayShifts = shiftsFor(u.id, day);
+                        const isTodayCell = isToday(day);
+                        const isSelected = selectedCell?.user_id === u.id && selectedCell?.date === day;
 
                         return (
                           <div
                             key={day}
                             onClick={() => openQuickCreate(u.id, day)}
-                            className="min-h-[110px] border-l border-slate-200 p-2 transition hover:bg-slate-50"
+                            className={`min-h-[100px] cursor-pointer border-l border-slate-200 p-2 transition ${
+                              isSelected
+                                ? "bg-green-50 ring-2 ring-inset ring-green-400"
+                                : isTodayCell
+                                ? "bg-green-50/40 hover:bg-green-50"
+                                : "hover:bg-slate-50"
+                            }`}
                           >
-                            <div className="flex h-full flex-col gap-2">
+                            <div className="flex h-full flex-col gap-1">
                               {dayShifts.length === 0 ? (
-                                <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400">
+                                <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400 hover:border-green-300 hover:text-green-500">
                                   + Schicht
                                 </div>
                               ) : null}
@@ -751,39 +636,25 @@ export default function DienstplanPage() {
                                   className="rounded-xl p-2 shadow-sm ring-1 ring-slate-200"
                                   style={shiftCardStyle(s.shift_type_color)}
                                 >
-                                  <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-start justify-between gap-1">
                                     <div>
-                                      <div className="text-sm font-bold">
+                                      <div className="text-xs font-bold leading-tight">
                                         {s.shift_type_name || "Schicht"}
                                       </div>
-                                      <div className="text-xs">
-                                        {s.start_time} - {s.end_time}
+                                      <div className="text-xs opacity-80">
+                                        {s.start_time}–{s.end_time}
                                       </div>
                                     </div>
-
                                     <button
                                       onClick={() => onDelete(s.id)}
-                                      className="text-xs font-semibold text-red-600 hover:underline"
+                                      className="flex-shrink-0 rounded px-1 text-xs font-semibold text-red-500 hover:bg-red-50 hover:text-red-700"
                                     >
-                                      Löschen
+                                      ×
                                     </button>
                                   </div>
-
-                                  <div className="mt-1 flex flex-wrap gap-2">
-                                    <Badge variant="slate">
-                                      {s.shift_type_counts_as_work ? "Zählt" : "Zählt nicht"}
-                                    </Badge>
-
-                                    {s.is_flexible ? (
-                                      <Badge variant="orange">Flexibel</Badge>
-                                    ) : (
-                                      <Badge variant="slate">Fix</Badge>
-                                    )}
-                                  </div>
-
-                                  {s.notes ? (
-                                    <div className="mt-1 text-xs opacity-80">{s.notes}</div>
-                                  ) : null}
+                                  {s.notes && (
+                                    <div className="mt-1 text-xs opacity-70 truncate">{s.notes}</div>
+                                  )}
                                 </div>
                               ))}
                             </div>
