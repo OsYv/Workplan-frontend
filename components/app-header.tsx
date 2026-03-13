@@ -168,6 +168,7 @@ function getPageTitle(pathname: string) {
   if (pathname === "/benutzer") return "Benutzer";
   if (pathname === "/schichtvorlagen") return "Schichtvorlagen";
   if (pathname === "/meine-schichten") return "Meine Schichten";
+  if (pathname === "/auswertung") return "Monatsauswertung";
   return "Workplan";
 }
 
@@ -368,6 +369,20 @@ export default function AppHeader({
                 </svg>
                 Schichtvorlagen
               </NavItem>
+
+              <NavItem href="/auswertung" active={pathname === "/auswertung"}>
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M3 3v18h18" />
+                  <path d="M7 16l4-4 4 4 4-6" />
+                </svg>
+                Auswertung
+              </NavItem>
             </>
           ) : null}
         </div>
@@ -516,6 +531,24 @@ export default function AppHeader({
                       <path d="M3 12h18" />
                     </svg>
                     Schichtvorlagen
+                  </MobileNavItem>
+
+                  <MobileNavItem
+                    href="/auswertung"
+                    active={pathname === "/auswertung"}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M3 3v18h18" />
+                      <path d="M7 16l4-4 4 4 4-6" />
+                    </svg>
+                    Auswertung
                   </MobileNavItem>
                 </>
               ) : null}

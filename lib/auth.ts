@@ -1,4 +1,4 @@
-export const ADMIN_ONLY_PATHS = ["/dienstplan", "/benutzer", "/schichtvorlagen"];
+export const ADMIN_ONLY_PATHS = ["/dienstplan", "/benutzer", "/schichtvorlagen", "/auswertung"];
 
 export function isAdmin(role?: string | null) {
   return role === "admin";
