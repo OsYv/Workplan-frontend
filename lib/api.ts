@@ -1,5 +1,9 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
 
+/* =========================
+   Token Handling
+========================= */
+
 function getToken() {
   return typeof window !== "undefined" ? localStorage.getItem("token") : null;
 }
@@ -30,12 +34,20 @@ function setRememberMe(value: boolean) {
   }
 }
 
+/* =========================
+   Redirect Helper
+========================= */
+
 function redirectToLogin() {
   if (typeof window === "undefined") return;
   if (window.location.pathname !== "/") {
     window.location.href = "/";
   }
 }
+
+/* =========================
+   Refresh Handling
+========================= */
 
 let refreshPromise: Promise<void> | null = null;
 
@@ -66,6 +78,10 @@ async function ensureRefreshed() {
   }
   return refreshPromise;
 }
+
+/* =========================
+   Generic Request
+========================= */
 
 async function request(path: string, options: RequestInit = {}, retry = true) {
   const token = getToken();
@@ -109,7 +125,13 @@ async function request(path: string, options: RequestInit = {}, retry = true) {
 
     try {
       const data = await res.json();
-      if (data?.detail) msg = data.detail;
+      if (data?.detail) {
+        if (typeof data.detail === "string") {
+          msg = data.detail;
+        } else {
+          msg = JSON.stringify(data.detail);
+        }
+      }
     } catch {}
 
     throw new Error(msg);
@@ -119,6 +141,10 @@ async function request(path: string, options: RequestInit = {}, retry = true) {
 
   return res.json();
 }
+
+/* =========================
+   API
+========================= */
 
 export const api = {
   login: async (username: string, password: string, remember_me = false) => {
@@ -142,7 +168,13 @@ export const api = {
 
       try {
         const data = await res.json();
-        if (data?.detail) msg = data.detail;
+        if (data?.detail) {
+          if (typeof data.detail === "string") {
+            msg = data.detail;
+          } else {
+            msg = JSON.stringify(data.detail);
+          }
+        }
       } catch {}
 
       throw new Error(msg);
@@ -160,26 +192,42 @@ export const api = {
     return data;
   },
 
-  me: () => request("/auth/me", { method: "GET" }),
-  status: () => request("/time/status", { method: "GET" }),
+  logout: async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // absichtlich still
+    } finally {
+      clearToken();
+      redirectToLogin();
+    }
+  },
 
-  users: () =>
-    request("/users", {
+  refresh: () =>
+    request("/auth/refresh", {
+      method: "POST",
+    }),
+
+  me: () =>
+    request("/auth/me", {
       method: "GET",
     }),
 
-  shiftTypes: () =>
-    request("/shift-types", {
+  status: () =>
+    request("/time/status", {
       method: "GET",
     }),
 
-  clockIn: (shift_id: number | null = null) =>
+  clockIn: () =>
     request("/time/clock-in", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ shift_id }),
+      body: JSON.stringify({ shift_id: null }),
     }),
 
   clockOut: () =>
@@ -192,22 +240,10 @@ export const api = {
       method: "GET",
     }),
 
-  refresh: () =>
-    request("/auth/refresh", {
-      method: "POST",
+  users: () =>
+    request("/users", {
+      method: "GET",
     }),
-
-  logout: async () => {
-    try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } finally {
-      clearToken();
-      redirectToLogin();
-    }
-  },
 
   createUser: (payload: {
     first_name: string;
@@ -247,14 +283,19 @@ export const api = {
       method: "DELETE",
     }),
 
+  shiftTypes: () =>
+    request("/shift-types", {
+      method: "GET",
+    }),
+
   createShiftType: (payload: {
     name: string;
     break_minutes_default: number;
     fixed_start_time?: string | null;
     fixed_end_time?: string | null;
     color?: string | null;
-    counts_as_work?: boolean;
-    is_flexible_default?: boolean;
+    counts_as_work: boolean;
+    is_flexible_default: boolean;
   }) =>
     request("/shift-types", {
       method: "POST",
@@ -321,26 +362,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  updateShift: (
-    shiftId: number,
-    payload: {
-      user_id?: number;
-      shift_type_id?: number;
-      date?: string;
-      start_time?: string;
-      end_time?: string;
-      is_flexible?: boolean;
-      notes?: string | null;
-    }
-  ) =>
-    request(`/shifts/${shiftId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-
   deleteShift: (shiftId: number) =>
     request(`/shifts/${shiftId}`, {
       method: "DELETE",
+    }),
+
+  reportsMonthly: (year: number, month: number) =>
+    request(`/reports/monthly?year=${year}&month=${month}`, {
+      method: "GET",
+    }),
+
+  reportsUserMonthly: (userId: number, year: number, month: number) =>
+    request(`/reports/monthly/${userId}?year=${year}&month=${month}`, {
+      method: "GET",
     }),
 };
