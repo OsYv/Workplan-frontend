@@ -171,7 +171,7 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center">
           <a
-            href="#"
+            href="/passwort-vergessen"
             className="text-sm font-medium text-slate-500 hover:text-slate-800"
           >
             Passwort vergessen?
