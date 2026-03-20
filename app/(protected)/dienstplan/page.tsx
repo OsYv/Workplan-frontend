@@ -58,6 +58,27 @@ type ShiftTypeOption = {
   is_flexible_default: boolean;
 };
 
+
+type Absence = {
+  id: number;
+  user_id: number;
+  user_name?: string | null;
+  type: string;
+  status: string;
+  date_from: string;
+  date_to: string;
+  notes?: string | null;
+};
+
+const ABSENCE_TYPES: Record<string, { label: string; color: string }> = {
+  urlaub:        { label: "Urlaub",             color: "#1D9E75" },
+  krankheit:     { label: "Krankheit",          color: "#E24B4A" },
+  feiertag:      { label: "Feiertag",           color: "#378ADD" },
+  weiterbildung: { label: "Weiterbildung",      color: "#7F77DD" },
+  unbezahlt:     { label: "Unbezahlter Urlaub", color: "#888780" },
+  schule:        { label: "Schule",             color: "#BA7517" },
+};
+
 type SelectedCell = { user_id: number; date: string } | null;
 
 const DEFAULT_COLOR = "#2563eb";
@@ -139,6 +160,7 @@ export default function DienstplanPage() {
   const [items, setItems] = useState<Shift[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [shiftTypes, setShiftTypes] = useState<ShiftTypeOption[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
@@ -201,8 +223,12 @@ export default function DienstplanPage() {
     setLoading(true);
     setMsg(null);
     try {
-      const data = await api.shifts(weekStart, weekEnd);
-      setItems(Array.isArray(data) ? data : []);
+      const [shiftsData, absenceData] = await Promise.all([
+        api.shifts(weekStart, weekEnd),
+        api.allAbsences({ from: weekStart, to: weekEnd }),
+      ]);
+      setItems(Array.isArray(shiftsData) ? shiftsData : []);
+      setAbsences(Array.isArray(absenceData) ? absenceData : []);
     } catch (e: any) {
       setMsg({ type: "err", text: e?.message ?? "Dienstplan konnte nicht geladen werden" });
     } finally {
@@ -228,6 +254,12 @@ export default function DienstplanPage() {
 
   function shiftsFor(userId: number, day: string) {
     return items.filter((s) => s.user_id === userId && s.date === day);
+  }
+
+  function absencesFor(userId: number, day: string) {
+    return absences.filter(
+      (a) => a.user_id === userId && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day
+    );
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -607,6 +639,7 @@ export default function DienstplanPage() {
                       {/* Tage */}
                       {weekDays.map((day) => {
                         const dayShifts = shiftsFor(u.id, day);
+                        const dayAbsences = absencesFor(u.id, day);
                         const isTodayCell = isToday(day);
                         const isSelected = selectedCell?.user_id === u.id && selectedCell?.date === day;
 
@@ -623,11 +656,25 @@ export default function DienstplanPage() {
                             }`}
                           >
                             <div className="flex h-full flex-col gap-1">
-                              {dayShifts.length === 0 ? (
+                              {dayAbsences.map((a) => {
+                                const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
+                                return (
+                                  <div
+                                    key={`abs-${a.id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="rounded-lg p-1.5 text-xs font-semibold ring-1 ring-slate-200"
+                                    style={{ backgroundColor: `${info.color}20`, borderLeft: `3px solid ${info.color}`, color: "#0f172a" }}
+                                  >
+                                    {info.label}
+                                    {a.status === "beantragt" && " (?)"}
+                                  </div>
+                                );
+                              })}
+                              {dayShifts.length === 0 && dayAbsences.length === 0 ? (
                                 <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 text-xs font-semibold text-slate-400 hover:border-green-300 hover:text-green-500">
                                   + Schicht
                                 </div>
-                              ) : null}
+                              ) : dayShifts.length === 0 ? null : null}
 
                               {dayShifts.map((s) => (
                                 <div

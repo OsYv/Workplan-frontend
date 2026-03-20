@@ -169,6 +169,7 @@ function getPageTitle(pathname: string) {
   if (pathname === "/schichtvorlagen") return "Schichtvorlagen";
   if (pathname === "/meine-schichten") return "Meine Schichten";
   if (pathname === "/auswertung") return "Monatsauswertung";
+  if (pathname === "/abwesenheiten") return "Abwesenheiten";
   return "Workplan";
 }
 
@@ -321,6 +322,20 @@ export default function AppHeader({
             Meine Schichten
           </NavItem>
 
+          <NavItem href="/abwesenheiten" active={pathname === "/abwesenheiten"}>
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            </svg>
+            Abwesenheiten
+          </NavItem>
+
           {isAdmin ? (
             <>
               <NavItem href="/dienstplan" active={pathname === "/dienstplan"}>
@@ -368,20 +383,6 @@ export default function AppHeader({
                   <path d="M3 12h18" />
                 </svg>
                 Schichtvorlagen
-              </NavItem>
-
-              <NavItem href="/auswertung" active={pathname === "/auswertung"}>
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M3 3v18h18" />
-                  <path d="M7 16l4-4 4 4 4-6" />
-                </svg>
-                Auswertung
               </NavItem>
             </>
           ) : null}
@@ -475,6 +476,24 @@ export default function AppHeader({
                 Meine Schichten
               </MobileNavItem>
 
+              <MobileNavItem
+                href="/abwesenheiten"
+                active={pathname === "/abwesenheiten"}
+                onClick={() => setMobileOpen(false)}
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M9 11l3 3L22 4" />
+                  <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                </svg>
+                Abwesenheiten
+              </MobileNavItem>
+
               {isAdmin ? (
                 <>
                   <MobileNavItem
@@ -531,24 +550,6 @@ export default function AppHeader({
                       <path d="M3 12h18" />
                     </svg>
                     Schichtvorlagen
-                  </MobileNavItem>
-
-                  <MobileNavItem
-                    href="/auswertung"
-                    active={pathname === "/auswertung"}
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M3 3v18h18" />
-                      <path d="M7 16l4-4 4 4 4-6" />
-                    </svg>
-                    Auswertung
                   </MobileNavItem>
                 </>
               ) : null}

@@ -26,6 +26,27 @@ type Shift = {
 
 const DEFAULT_COLOR = "#2563eb";
 
+type Absence = {
+  id: number;
+  user_id: number;
+  type: string;
+  status: string;
+  date_from: string;
+  date_to: string;
+  notes?: string | null;
+};
+
+const ABSENCE_TYPES: Record<string, { label: string; color: string }> = {
+  urlaub:        { label: "Urlaub",             color: "#1D9E75" },
+  krankheit:     { label: "Krankheit",          color: "#E24B4A" },
+  feiertag:      { label: "Feiertag",           color: "#378ADD" },
+  weiterbildung: { label: "Weiterbildung",      color: "#7F77DD" },
+  unbezahlt:     { label: "Unbezahlter Urlaub", color: "#888780" },
+  schule:        { label: "Schule",             color: "#BA7517" },
+};
+
+
+
 function startOfWeekIso() {
   const d = new Date();
   const day = d.getDay();
@@ -62,6 +83,7 @@ function shiftCardStyle(color?: string | null) {
 export default function MeineSchichtenPage() {
   const [weekStart, setWeekStart] = useState(startOfWeekIso());
   const [items, setItems] = useState<Shift[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -77,8 +99,12 @@ export default function MeineSchichtenPage() {
     setMsg(null);
 
     try {
-      const data = await api.myShifts(weekStart, weekEnd);
-      setItems(Array.isArray(data) ? data : []);
+      const [shiftsData, absenceData] = await Promise.all([
+        api.myShifts(weekStart, weekEnd),
+        api.myAbsences(),
+      ]);
+      setItems(Array.isArray(shiftsData) ? shiftsData : []);
+      setAbsences(Array.isArray(absenceData) ? absenceData : []);
     } catch (e: any) {
       setMsg(e?.message ?? "Schichten konnten nicht geladen werden");
     } finally {
@@ -106,6 +132,12 @@ export default function MeineSchichtenPage() {
     return items
       .filter((s) => s.date === day)
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }
+
+  function absencesForDay(day: string) {
+    return absences.filter(
+      (a) => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day
+    );
   }
 
   return (
@@ -139,24 +171,46 @@ export default function MeineSchichtenPage() {
           ) : (
             weekDays.map((day) => {
               const dayItems = shiftsFor(day);
+              const dayAbsences = absencesForDay(day);
 
               return (
                 <SectionCard
                   key={day}
                   title={formatDayHeader(day)}
                   right={
-                    dayItems.length > 0 ? (
+                    dayAbsences.length > 0 ? (
+                      <Badge variant="orange">{ABSENCE_TYPES[dayAbsences[0].type]?.label ?? dayAbsences[0].type}</Badge>
+                    ) : dayItems.length > 0 ? (
                       <Badge variant="green">{dayItems.length} Schicht(en)</Badge>
                     ) : (
                       <Badge variant="slate">Frei</Badge>
                     )
                   }
                 >
-                  {dayItems.length === 0 ? (
+                  {dayAbsences.map((a) => {
+                    const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
+                    return (
+                      <div
+                        key={a.id}
+                        className="mb-3 rounded-xl p-3 ring-1 ring-slate-200"
+                        style={{ borderLeft: \`4px solid \${info.color}\`, backgroundColor: \`\${info.color}18\` }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: info.color }} />
+                          <span className="font-semibold text-slate-900">{info.label}</span>
+                          {a.status === "beantragt" && (
+                            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">Beantragt</span>
+                          )}
+                        </div>
+                        {a.notes && <div className="mt-1 text-xs text-slate-500">{a.notes}</div>}
+                      </div>
+                    );
+                  })}
+                  {dayItems.length === 0 && dayAbsences.length === 0 ? (
                     <AlertBox variant="info">
                       Keine Schicht geplant.
                     </AlertBox>
-                  ) : (
+                  ) : dayItems.length === 0 ? null : (
                     <div className="grid gap-3">
                       {dayItems.map((s) => (
                         <div
