@@ -31,6 +31,7 @@ type UserItem = {
   email: string;
   role: string;
   is_active: boolean;
+  sort_order?: number;
 };
 
 function fullName(u: {
@@ -74,6 +75,7 @@ export default function BenutzerPage() {
   const [forbidden, setForbidden] = useState(false);
   const [items, setItems] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reordering, setReordering] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -96,7 +98,8 @@ export default function BenutzerPage() {
     setMsg(null);
     try {
       const data = await api.users();
-      setItems(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setItems(list.sort((a: UserItem, b: UserItem) => (a.sort_order ?? 0) - (b.sort_order ?? 0)));
     } catch (e: any) {
       setMsg({ type: "err", text: e?.message ?? "Benutzer konnten nicht geladen werden" });
     } finally {
@@ -111,6 +114,29 @@ export default function BenutzerPage() {
   useEffect(() => {
     if (!forbidden) loadUsers();
   }, [forbidden]);
+
+  async function moveUser(userId: number, direction: "up" | "down") {
+    const idx = items.findIndex(u => u.id === userId);
+    if (idx === -1) return;
+    const newItems = [...items];
+    if (direction === "up" && idx > 0) {
+      [newItems[idx - 1], newItems[idx]] = [newItems[idx], newItems[idx - 1]];
+    } else if (direction === "down" && idx < newItems.length - 1) {
+      [newItems[idx], newItems[idx + 1]] = [newItems[idx + 1], newItems[idx]];
+    } else return;
+
+    setItems(newItems);
+    setReordering(true);
+
+    try {
+      await api.reorderUsers(newItems.map(u => u.id));
+    } catch (e: any) {
+      setMsg({ type: "err", text: e?.message ?? "Reihenfolge konnte nicht gespeichert werden" });
+      await loadUsers();
+    } finally {
+      setReordering(false);
+    }
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();

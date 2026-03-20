@@ -282,6 +282,14 @@ export const api = {
     request(`/users/${userId}`, {
       method: "DELETE",
     }),
+    
+  reorderUsers: (orderedIds: number[]) =>
+    request("/users/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    }),
+
 
   shiftTypes: () =>
     request("/shift-types", {
