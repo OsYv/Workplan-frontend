@@ -376,4 +376,62 @@ export const api = {
     request(`/reports/monthly/${userId}?year=${year}&month=${month}`, {
       method: "GET",
     }),
+// Diese Funktionen in lib/api.ts beim "api" Objekt hinzufügen:
+
+  myAbsences: () =>
+    request("/absences/me", { method: "GET" }),
+
+  createMyAbsence: (payload: {
+    type: string;
+    date_from: string;
+    date_to: string;
+    notes?: string | null;
+  }) =>
+    request("/absences/me", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
+  deleteMyAbsence: (absenceId: number) =>
+    request(`/absences/me/${absenceId}`, { method: "DELETE" }),
+
+  allAbsences: (params?: { from?: string; to?: string; user_id?: number; status?: string }) => {
+    const p = new URLSearchParams();
+    if (params?.from) p.set("from", params.from);
+    if (params?.to) p.set("to", params.to);
+    if (params?.user_id) p.set("user_id", String(params.user_id));
+    if (params?.status) p.set("status", params.status);
+    const qs = p.toString();
+    return request(`/absences${qs ? "?" + qs : ""}`, { method: "GET" });
+  },
+
+  adminCreateAbsence: (payload: {
+    user_id: number;
+    type: string;
+    date_from: string;
+    date_to: string;
+    notes?: string | null;
+  }) =>
+    request(`/absences?user_id=${payload.user_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: payload.type,
+        date_from: payload.date_from,
+        date_to: payload.date_to,
+        notes: payload.notes,
+      }),
+    }),
+
+  updateAbsenceStatus: (absenceId: number, status: string) =>
+    request(`/absences/${absenceId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }),
+
+  deleteAbsence: (absenceId: number) =>
+    request(`/absences/${absenceId}`, { method: "DELETE" }),
+
 };
