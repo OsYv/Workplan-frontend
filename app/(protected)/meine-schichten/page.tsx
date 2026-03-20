@@ -193,7 +193,7 @@ export default function MeineSchichtenPage() {
                       <div
                         key={a.id}
                         className="mb-3 rounded-xl p-3 ring-1 ring-slate-200"
-                        style={{ borderLeft: \`4px solid \${info.color}\`, backgroundColor: \`\${info.color}18\` }}
+                        style={{ borderLeft: `4px solid ${info.color}`, backgroundColor: `${info.color}18` }}
                       >
                         <div className="flex items-center gap-2">
                           <div className="h-3 w-3 rounded-full" style={{ backgroundColor: info.color }} />
