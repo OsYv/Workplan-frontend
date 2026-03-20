@@ -56,6 +56,11 @@ const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August",
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
+function isWeekend(dateIso: string) {
+  const day = new Date(dateIso).getDay();
+  return day === 0 || day === 6;
+}
+
 function startOfWeekIso() {
   const d = new Date();
   const day = d.getDay();
@@ -149,6 +154,21 @@ export default function MeineSchichtenPage() {
   }, [year, month]);
 
   const displayDays = view === "woche" ? weekDays : monthDays;
+
+  const visibleDays = useMemo(() => {
+    return displayDays.filter((day) => {
+      if (!isWeekend(day)) return true;
+      if (tab === "meine") {
+        const hasShift = myShifts.some(s => s.date === day);
+        const hasAbsence = myAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+        return hasShift || hasAbsence;
+      } else {
+        const hasShift = allShifts.some(s => s.date === day);
+        const hasAbsence = allAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+        return hasShift || hasAbsence;
+      }
+    });
+  }, [displayDays, tab, myShifts, myAbsences, allShifts, allAbsences]);
   const from = view === "woche" ? weekStart : `${year}-${String(month).padStart(2,"0")}-01`;
   const to = view === "woche" ? weekEnd : endOfMonthIso(year, month);
 
@@ -207,7 +227,7 @@ export default function MeineSchichtenPage() {
 
   const COL_NAME = 160;
   const COL_DAY = 120;
-  const tableWidth = (tab === "meine" ? 0 : COL_NAME) + displayDays.length * COL_DAY;
+  const tableWidth = (tab === "meine" ? 0 : COL_NAME) + visibleDays.length * COL_DAY;
 
   return (
     <div style={{ padding: "2.5rem 1.25rem" }}>
@@ -245,7 +265,7 @@ export default function MeineSchichtenPage() {
           <thead>
             <tr style={{ background: "#f8fafc" }}>
               {tab === "alle" && <th style={{ width: COL_NAME, minWidth: COL_NAME, padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: "#f8fafc", zIndex: 2 }}>Mitarbeiter</th>}
-              {displayDays.map((day) => (
+              {visibleDays.map((day) => (
                 <th key={day} style={{ width: COL_DAY, minWidth: COL_DAY, padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: day === todayIso() ? "#15803d" : "#475569", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0", background: day === todayIso() ? "#f0fdf4" : "#f8fafc" }}>
                   {formatDayShort(day)}
                   {day === todayIso() && <div style={{ fontSize: 10, fontWeight: 400, color: "#16a34a" }}>Heute</div>}
@@ -255,10 +275,10 @@ export default function MeineSchichtenPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={displayDays.length + (tab === "alle" ? 1 : 0)} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
+              <tr><td colSpan={visibleDays.length + (tab === "alle" ? 1 : 0)} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
             ) : tab === "meine" ? (
               <tr>
-                {displayDays.map((day) => {
+                {visibleDays.map((day) => {
                   const dayShifts = myShifts.filter((s) => s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
                   const dayAbsences = myAbsences.filter((a) => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
                   return (
@@ -269,7 +289,7 @@ export default function MeineSchichtenPage() {
                 })}
               </tr>
             ) : groupedUsers.length === 0 ? (
-              <tr><td colSpan={displayDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
+              <tr><td colSpan={visibleDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
             ) : (
               groupedUsers.map((u) => (
                 <tr key={u.id} style={{ background: u.id === myUserId ? "#f0fdf4" : "#fff" }}>
@@ -282,7 +302,7 @@ export default function MeineSchichtenPage() {
                       </div>
                     </div>
                   </td>
-                  {displayDays.map((day) => {
+                  {visibleDays.map((day) => {
                     const dayShifts = allShifts.filter((s) => s.user_id === u.id && s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
                     const dayAbsences = allAbsences.filter((a) => a.user_id === u.id && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
                     return (

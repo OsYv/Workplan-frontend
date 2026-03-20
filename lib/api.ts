@@ -374,6 +374,19 @@ export const api = {
     request(`/shifts/${shiftId}`, {
       method: "DELETE",
     }),
+  getDayNotes: (from: string, to: string) =>
+    request(`/day-notes?from_date=${from}&to_date=${to}`, { method: "GET" }),
+
+  upsertDayNote: (date: string, note: string) =>
+    request(`/day-notes/${date}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    }),
+
+  deleteDayNote: (date: string) =>
+    request(`/day-notes/${date}`, { method: "DELETE" }),
+
 
   reportsMonthly: (year: number, month: number) =>
     request(`/reports/monthly?year=${year}&month=${month}`, {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import Badge from "@/components/ui/badge";
 import PageContainer from "@/components/ui/page-container";
@@ -76,6 +76,9 @@ export default function BenutzerPage() {
   const [items, setItems] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [reordering, setReordering] = useState(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const dragIdRef = useRef<number | null>(null);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -115,27 +118,51 @@ export default function BenutzerPage() {
     if (!forbidden) loadUsers();
   }, [forbidden]);
 
-  async function moveUser(userId: number, direction: "up" | "down") {
-    const idx = items.findIndex(u => u.id === userId);
-    if (idx === -1) return;
+  function handleDragStart(id: number) {
+    setDragId(id);
+    dragIdRef.current = id;
+  }
+
+  function handleDragOver(e: React.DragEvent, id: number) {
+    e.preventDefault();
+    setDragOverId(id);
+  }
+
+  async function handleDrop(targetId: number) {
+    const currentDragId = dragIdRef.current;
+    if (!currentDragId || currentDragId === targetId) {
+      setDragId(null);
+      setDragOverId(null);
+      dragIdRef.current = null;
+      return;
+    }
+
     const newItems = [...items];
-    if (direction === "up" && idx > 0) {
-      [newItems[idx - 1], newItems[idx]] = [newItems[idx], newItems[idx - 1]];
-    } else if (direction === "down" && idx < newItems.length - 1) {
-      [newItems[idx], newItems[idx + 1]] = [newItems[idx + 1], newItems[idx]];
-    } else return;
+    const fromIdx = newItems.findIndex(u => u.id === currentDragId);
+    const toIdx = newItems.findIndex(u => u.id === targetId);
+    const [moved] = newItems.splice(fromIdx, 1);
+    newItems.splice(toIdx, 0, moved);
 
     setItems(newItems);
+    setDragId(null);
+    setDragOverId(null);
     setReordering(true);
 
     try {
       await api.reorderUsers(newItems.map(u => u.id));
+      setMsg({ type: "ok", text: "✅ Reihenfolge gespeichert" });
     } catch (e: any) {
       setMsg({ type: "err", text: e?.message ?? "Reihenfolge konnte nicht gespeichert werden" });
       await loadUsers();
     } finally {
       setReordering(false);
     }
+  }
+
+  function handleDragEnd() {
+    setDragId(null);
+    setDragOverId(null);
+    dragIdRef.current = null;
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -434,7 +461,7 @@ export default function BenutzerPage() {
         <SectionCard
           title="Benutzer"
           right={
-            loading ? <Badge variant="slate">Lade…</Badge> : <Badge variant="green">{items.length} Benutzer</Badge>
+            reordering ? <Badge variant="orange">Speichert…</Badge> : loading ? <Badge variant="slate">Lade…</Badge> : <Badge variant="green">{items.length} Benutzer</Badge>
           }
         >
           {/* Desktop-Tabelle */}
@@ -454,10 +481,18 @@ export default function BenutzerPage() {
                 {items.map((u) => (
                   <tr
                     key={u.id}
-                    className={`hover:bg-slate-50/60 ${editingUserId === u.id ? "bg-green-50/40" : ""}`}
+                    draggable
+                    onDragStart={() => handleDragStart(u.id)}
+                    onDragOver={(e) => handleDragOver(e, u.id)}
+                    onDrop={() => handleDrop(u.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`hover:bg-slate-50/60 cursor-grab active:cursor-grabbing ${editingUserId === u.id ? "bg-green-50/40" : ""} ${dragOverId === u.id ? "bg-blue-50 border-t-2 border-blue-400" : ""} ${dragId === u.id ? "opacity-50" : ""}`}
                   >
                     <td className="px-4 py-3 font-semibold text-slate-900">
-                      {fullName(u)}
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-300 cursor-grab select-none" title="Ziehen zum Sortieren">⠿</span>
+                        {fullName(u)}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-700">
                       {formatBirthDate(u.birth_date)}
