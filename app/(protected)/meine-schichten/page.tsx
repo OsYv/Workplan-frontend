@@ -3,9 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Badge from "@/components/ui/badge";
-import PageContainer from "@/components/ui/page-container";
-import PageHeader from "@/components/ui/page-header";
-import SectionCard from "@/components/ui/section-card";
 import AppButton from "@/components/ui/app-button";
 import AlertBox from "@/components/ui/alert-box";
 
@@ -24,17 +21,27 @@ type Shift = {
   notes?: string | null;
 };
 
-const DEFAULT_COLOR = "#2563eb";
-
 type Absence = {
   id: number;
   user_id: number;
+  user_name?: string | null;
   type: string;
   status: string;
   date_from: string;
   date_to: string;
   notes?: string | null;
 };
+
+type UserOption = {
+  id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
+  email?: string | null;
+  is_active?: boolean;
+};
+
+const DEFAULT_COLOR = "#2563eb";
 
 const ABSENCE_TYPES: Record<string, { label: string; color: string }> = {
   urlaub:        { label: "Urlaub",             color: "#1D9E75" },
@@ -45,13 +52,27 @@ const ABSENCE_TYPES: Record<string, { label: string; color: string }> = {
   schule:        { label: "Schule",             color: "#BA7517" },
 };
 
+const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
+function todayIso() { return new Date().toISOString().slice(0, 10); }
+
+function isWeekend(dateIso: string) {
+  const day = new Date(dateIso).getDay();
+  return day === 0 || day === 6;
+}
+
+function hasDataOnDay(day: string, shifts: Shift[], absences: Absence[], userId?: number | null) {
+  const s = userId != null ? shifts.filter(x => x.user_id === userId) : shifts;
+  const a = userId != null ? absences.filter(x => x.user_id === userId) : absences;
+  const hasShift = s.some(x => x.date === day);
+  const hasAbsence = a.some(x => x.status !== "abgelehnt" && x.date_from <= day && x.date_to >= day);
+  return hasShift || hasAbsence;
+}
 
 function startOfWeekIso() {
   const d = new Date();
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
   return d.toISOString().slice(0, 10);
 }
 
@@ -61,216 +82,250 @@ function addDays(dateIso: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDayHeader(dateIso: string) {
-  const d = new Date(dateIso);
-  return d.toLocaleDateString("de-CH", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+function endOfMonthIso(year: number, month: number) {
+  return new Date(year, month, 0).toISOString().slice(0, 10);
 }
 
-function shiftCardStyle(color?: string | null) {
-  const c = color || DEFAULT_COLOR;
-  return {
-    borderLeft: `4px solid ${c}`,
-    backgroundColor: `${c}12`,
-    color: "#0f172a",
-  } as React.CSSProperties;
+function formatDayShort(dateIso: string) {
+  const d = new Date(dateIso);
+  return d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+}
+
+function displayUser(u: UserOption) {
+  const full = `${u.first_name?.trim() ?? ""} ${u.last_name?.trim() ?? ""}`.trim();
+  return full || u.name?.trim() || u.email || `User ${u.id}`;
+}
+
+function getInitials(label?: string | null) {
+  if (!label) return "U";
+  const base = label.includes("@") ? label.split("@")[0] : label;
+  const parts = base.split(/[._\-\s]+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+function userAvatarColor(seed: string) {
+  const colors = ["bg-blue-100 text-blue-700","bg-fuchsia-100 text-fuchsia-700","bg-emerald-100 text-emerald-700","bg-orange-100 text-orange-700","bg-violet-100 text-violet-700","bg-cyan-100 text-cyan-700","bg-amber-100 text-amber-700","bg-lime-100 text-lime-700"];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function CellContent({ shifts, absences }: { shifts: Shift[]; absences: Absence[] }) {
+  if (shifts.length === 0 && absences.length === 0) {
+    return <span style={{ color: "#cbd5e1", fontSize: 11 }}>–</span>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      {absences.map((a) => {
+        const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
+        return (
+          <div key={`a${a.id}`} style={{ borderLeft: `3px solid ${info.color}`, backgroundColor: `${info.color}22`, borderRadius: 4, padding: "2px 5px", fontSize: 11, fontWeight: 600, color: "#0f172a" }}>
+            {info.label}{a.status === "beantragt" ? " (?)" : ""}
+          </div>
+        );
+      })}
+      {shifts.map((s) => (
+        <div key={s.id} style={{ borderLeft: `3px solid ${s.shift_type_color || DEFAULT_COLOR}`, backgroundColor: `${s.shift_type_color || DEFAULT_COLOR}18`, borderRadius: 4, padding: "2px 5px", fontSize: 11, color: "#0f172a" }}>
+          <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.shift_type_name || "Schicht"}</div>
+          <div style={{ opacity: 0.7 }}>{s.start_time}–{s.end_time}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function MeineSchichtenPage() {
+  const [tab, setTab] = useState<"meine" | "alle">("meine");
+  const [view, setView] = useState<"woche" | "monat">("woche");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [myUserId, setMyUserId] = useState<number | null>(null);
+
   const [weekStart, setWeekStart] = useState(startOfWeekIso());
-  const [items, setItems] = useState<Shift[]>([]);
-  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+
+  const [myShifts, setMyShifts] = useState<Shift[]>([]);
+  const [allShifts, setAllShifts] = useState<Shift[]>([]);
+  const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
+  const [allAbsences, setAllAbsences] = useState<Absence[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const weekDays = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
-    [weekStart]
-  );
-
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekEnd = weekDays[6];
 
-  async function loadMyShifts() {
+  const monthDays = useMemo(() => {
+    const count = new Date(year, month, 0).getDate();
+    return Array.from({ length: count }, (_, i) => `${year}-${String(month).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`);
+  }, [year, month]);
+
+  const displayDays = view === "woche" ? weekDays : monthDays;
+  const from = view === "woche" ? weekStart : `${year}-${String(month).padStart(2,"0")}-01`;
+  const to = view === "woche" ? weekEnd : endOfMonthIso(year, month);
+
+  // Wochenenden ausblenden wenn keine Daten
+  const visibleDays = useMemo(() => {
+    return displayDays.filter((day) => {
+      if (!isWeekend(day)) return true;
+      // Wochenende nur zeigen wenn Daten vorhanden
+      if (tab === "meine") {
+        return hasDataOnDay(day, myShifts, myAbsences);
+      } else {
+        return allShifts.some(s => s.date === day) ||
+          allAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+      }
+    });
+  }, [displayDays, tab, myShifts, myAbsences, allShifts, allAbsences]);
+
+  const periodLabel = view === "woche"
+    ? `${formatDayShort(weekStart)} – ${formatDayShort(weekEnd)}`
+    : `${MONTHS[month - 1]} ${year}`;
+
+  useEffect(() => {
+    api.me().then((me) => { setMyUserId(me.id); setIsAdmin(me?.role === "admin"); }).catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [from, to, tab, isAdmin]);
+
+  async function load() {
     setLoading(true);
     setMsg(null);
-
     try {
-      const [shiftsData, absenceData] = await Promise.all([
-        api.myShifts(weekStart, weekEnd),
-        api.myAbsences(),
-      ]);
-      setItems(Array.isArray(shiftsData) ? shiftsData : []);
-      setAbsences(Array.isArray(absenceData) ? absenceData : []);
+      if (tab === "meine") {
+        const [s, a] = await Promise.all([api.myShifts(from, to), api.myAbsences()]);
+        setMyShifts(Array.isArray(s) ? s : []);
+        setMyAbsences(Array.isArray(a) ? a : []);
+      } else {
+        const promises: Promise<any>[] = [api.shifts(from, to), api.allAbsences({ from, to })];
+        if (users.length === 0) promises.push(api.users());
+        const [s, a, u] = await Promise.all(promises);
+        setAllShifts(Array.isArray(s) ? s : []);
+        setAllAbsences(Array.isArray(a) ? a : []);
+        if (u) setUsers(Array.isArray(u) ? u.filter((x: UserOption) => x.is_active !== false) : []);
+      }
     } catch (e: any) {
-      setMsg(e?.message ?? "Schichten konnten nicht geladen werden");
+      setMsg(e?.message ?? "Fehler beim Laden");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadMyShifts();
-  }, [weekStart]);
-
-  function prevWeek() {
-    setWeekStart(addDays(weekStart, -7));
+  function prevPeriod() {
+    if (view === "woche") setWeekStart(addDays(weekStart, -7));
+    else { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); }
+  }
+  function nextPeriod() {
+    if (view === "woche") setWeekStart(addDays(weekStart, 7));
+    else { if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1); }
+  }
+  function goToday() {
+    if (view === "woche") setWeekStart(startOfWeekIso());
+    else { setYear(new Date().getFullYear()); setMonth(new Date().getMonth() + 1); }
   }
 
-  function nextWeek() {
-    setWeekStart(addDays(weekStart, 7));
-  }
+  const groupedUsers = useMemo(() =>
+    [...users].map((u) => ({ id: u.id, name: displayUser(u) })).sort((a, b) => a.name.localeCompare(b.name)),
+    [users]
+  );
 
-  function currentWeek() {
-    setWeekStart(startOfWeekIso());
-  }
-
-  function shiftsFor(day: string) {
-    return items
-      .filter((s) => s.date === day)
-      .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  }
-
-  function absencesForDay(day: string) {
-    return absences.filter(
-      (a) => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day
-    );
-  }
+  const COL_NAME = 160;
+  const COL_DAY = 120;
+  const tableWidth = (tab === "meine" ? 0 : COL_NAME) + visibleDays.length * COL_DAY;
 
   return (
-    <PageContainer>
-      <div className="grid gap-6">
-        <PageHeader
-          title="Meine Schichten"
-          subtitle="Übersicht deiner geplanten Einsätze für die aktuelle Woche."
-          actions={
-            <>
-              <AppButton type="button" variant="secondary" onClick={prevWeek} className="px-4 py-2 text-sm">
-                ← Woche zurück
-              </AppButton>
-              <AppButton type="button" onClick={currentWeek} className="px-4 py-2 text-sm">
-                Heute
-              </AppButton>
-              <AppButton type="button" variant="secondary" onClick={nextWeek} className="px-4 py-2 text-sm">
-                Woche vor →
-              </AppButton>
-            </>
-          }
-        />
-
-        {msg && <AlertBox variant="err">{msg}</AlertBox>}
-
-        <div className="grid gap-4">
-          {loading ? (
-            <SectionCard>
-              <div className="text-sm text-slate-500">Lade meine Schichten…</div>
-            </SectionCard>
-          ) : (
-            weekDays.map((day) => {
-              const dayItems = shiftsFor(day);
-              const dayAbsences = absencesForDay(day);
-
-              return (
-                <SectionCard
-                  key={day}
-                  title={formatDayHeader(day)}
-                  right={
-                    dayAbsences.length > 0 ? (
-                      <Badge variant="orange">{ABSENCE_TYPES[dayAbsences[0].type]?.label ?? dayAbsences[0].type}</Badge>
-                    ) : dayItems.length > 0 ? (
-                      <Badge variant="green">{dayItems.length} Schicht(en)</Badge>
-                    ) : (
-                      <Badge variant="slate">Frei</Badge>
-                    )
-                  }
-                >
-                  {dayAbsences.map((a) => {
-                    const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
-                    return (
-                      <div
-                        key={a.id}
-                        className="mb-3 rounded-xl p-3 ring-1 ring-slate-200"
-                        style={{ borderLeft: `4px solid ${info.color}`, backgroundColor: `${info.color}18` }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: info.color }} />
-                          <span className="font-semibold text-slate-900">{info.label}</span>
-                          {a.status === "beantragt" && (
-                            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">Beantragt</span>
-                          )}
-                        </div>
-                        {a.notes && <div className="mt-1 text-xs text-slate-500">{a.notes}</div>}
-                      </div>
-                    );
-                  })}
-                  {dayItems.length === 0 && dayAbsences.length === 0 ? (
-                    <AlertBox variant="info">
-                      Keine Schicht geplant.
-                    </AlertBox>
-                  ) : dayItems.length === 0 ? null : (
-                    <div className="grid gap-3">
-                      {dayItems.map((s) => (
-                        <div
-                          key={s.id}
-                          className="rounded-xl p-4 shadow-sm ring-1 ring-slate-200"
-                          style={shiftCardStyle(s.shift_type_color)}
-                        >
-                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="h-4 w-4 rounded-full ring-1 ring-slate-200"
-                                  style={{
-                                    backgroundColor: s.shift_type_color || DEFAULT_COLOR,
-                                  }}
-                                />
-                                <div className="text-base font-bold">
-                                  {s.shift_type_name || "Schicht"}
-                                </div>
-                              </div>
-
-                              <div className="mt-1 text-sm">
-                                {s.start_time} - {s.end_time}
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              {s.is_flexible ? (
-                                <Badge variant="orange">Flexibel</Badge>
-                              ) : (
-                                <Badge variant="slate">Fix</Badge>
-                              )}
-
-                              {s.shift_type_counts_as_work === false ? (
-                                <Badge variant="red">Nicht anrechenbar</Badge>
-                              ) : (
-                                <Badge variant="green">Anrechenbar</Badge>
-                              )}
-                            </div>
-                          </div>
-
-                          {s.notes ? (
-                            <div className="mt-3 rounded-lg bg-white/60 px-3 py-2 text-sm">
-                              {s.notes}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </SectionCard>
-              );
-            })
-          )}
+    <div style={{ padding: "2.5rem 1.25rem" }}>
+      <div style={{ maxWidth: "72rem", margin: "0 auto 1.5rem" }}>
+        {/* Header */}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0 }}>Schichten</h1>
+            <p style={{ fontSize: 13, color: "#64748b", margin: "4px 0 0" }}>Übersicht der geplanten Einsätze.</p>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              <button onClick={() => setView("woche")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: view === "woche" ? "#15803d" : "#fff", color: view === "woche" ? "#fff" : "#475569", border: "none", cursor: "pointer" }}>Woche</button>
+              <button onClick={() => setView("monat")} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: view === "monat" ? "#15803d" : "#fff", color: view === "monat" ? "#fff" : "#475569", border: "none", borderLeft: "1px solid #e2e8f0", cursor: "pointer" }}>Monat</button>
+            </div>
+            <button onClick={prevPeriod} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer", fontSize: 14 }}>←</button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#334155", minWidth: 130, textAlign: "center" }}>{periodLabel}</span>
+            <button onClick={nextPeriod} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer", fontSize: 14 }}>→</button>
+            <button onClick={goToday} style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: "#15803d", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Heute</button>
+          </div>
         </div>
 
-        <p className="text-center text-xs text-zinc-400">
-          © {new Date().getFullYear()} Workplan by Oswald-IT
-        </p>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 4, width: "fit-content", marginBottom: 20 }}>
+          <button onClick={() => setTab("meine")} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: tab === "meine" ? "#fff" : "transparent", color: tab === "meine" ? "#0f172a" : "#64748b", cursor: "pointer", boxShadow: tab === "meine" ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>Meine Schichten</button>
+          {isAdmin && <button onClick={() => setTab("alle")} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: tab === "alle" ? "#fff" : "transparent", color: tab === "alle" ? "#0f172a" : "#64748b", cursor: "pointer", boxShadow: tab === "alle" ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>Alle Mitarbeiter</button>}
+        </div>
+
+        {msg && <div style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>{msg}</div>}
       </div>
-    </PageContainer>
+
+      {/* Tabelle – volle Breite, scrollbar */}
+      <div style={{ overflowX: "auto", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: tableWidth }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {tab === "alle" && <th style={{ width: COL_NAME, minWidth: COL_NAME, padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: "#f8fafc", zIndex: 2 }}>Mitarbeiter</th>}
+              {visibleDays.map((day) => (
+                <th key={day} style={{ width: COL_DAY, minWidth: COL_DAY, padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: day === todayIso() ? "#15803d" : "#475569", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0", background: day === todayIso() ? "#f0fdf4" : "#f8fafc" }}>
+                  {formatDayShort(day)}
+                  {day === todayIso() && <div style={{ fontSize: 10, fontWeight: 400, color: "#16a34a" }}>Heute</div>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={displayDays.length + (tab === "alle" ? 1 : 0)} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
+            ) : tab === "meine" ? (
+              <tr>
+                {visibleDays.map((day) => {
+                  const dayShifts = myShifts.filter((s) => s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
+                  const dayAbsences = myAbsences.filter((a) => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+                  return (
+                    <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minHeight: 80, background: day === todayIso() ? "#f0fdf4" : "#fff" }}>
+                      <CellContent shifts={dayShifts} absences={dayAbsences} />
+                    </td>
+                  );
+                })}
+              </tr>
+            ) : groupedUsers.length === 0 ? (
+              <tr><td colSpan={displayDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
+            ) : (
+              groupedUsers.map((u) => (
+                <tr key={u.id} style={{ background: u.id === myUserId ? "#f0fdf4" : "#fff" }}>
+                  <td style={{ width: COL_NAME, minWidth: COL_NAME, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: u.id === myUserId ? "#f0fdf4" : "#fff", zIndex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div className={`grid place-items-center rounded-full text-xs font-bold flex-shrink-0 ${userAvatarColor(u.name)}`} style={{ width: 32, height: 32, fontSize: 11 }}>{getInitials(u.name)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", lineHeight: 1.3 }}>
+                        {u.name}
+                        {u.id === myUserId && <span style={{ fontSize: 11, color: "#16a34a", marginLeft: 4 }}>(ich)</span>}
+                      </div>
+                    </div>
+                  </td>
+                  {visibleDays.map((day) => {
+                    const dayShifts = allShifts.filter((s) => s.user_id === u.id && s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
+                    const dayAbsences = allAbsences.filter((a) => a.user_id === u.id && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+                    return (
+                      <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minWidth: COL_DAY, background: day === todayIso() ? (u.id === myUserId ? "#dcfce7" : "#f0fdf4") : (u.id === myUserId ? "#f0fdf4" : "#fff") }}>
+                        <CellContent shifts={dayShifts} absences={dayAbsences} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p style={{ textAlign: "center", fontSize: 11, color: "#a1a1aa", marginTop: 24 }}>
+        © {new Date().getFullYear()} Workplan by Oswald-IT
+      </p>
+    </div>
   );
 }
