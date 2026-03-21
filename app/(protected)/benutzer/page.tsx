@@ -32,6 +32,7 @@ type UserItem = {
   role: string;
   is_active: boolean;
   sort_order?: number;
+  weekly_hours?: number;
 };
 
 function fullName(u: {
@@ -219,6 +220,7 @@ export default function BenutzerPage() {
         password: editForm.password || undefined,
         role: editForm.role,
         is_active: editForm.is_active,
+        weekly_hours: parseFloat(editForm.weekly_hours) || 40,
       });
       setMsg({ type: "ok", text: "✅ Benutzer aktualisiert" });
       cancelEdit();
@@ -433,6 +435,19 @@ export default function BenutzerPage() {
                   <option value="employee">Mitarbeiter</option>
                   <option value="admin">Admin</option>
                 </SelectInput>
+              </FormField>
+
+              <FormField label="Wochenstunden (Soll)" htmlFor="edit_weekly_hours">
+                <TextInput
+                  id="edit_weekly_hours"
+                  title="Wochenstunden"
+                  type="number"
+                  value={editForm.weekly_hours}
+                  onChange={(e) => setEditForm({ ...editForm, weekly_hours: e.target.value })}
+                  min={1}
+                  max={60}
+                  step={0.5}
+                />
               </FormField>
 
               <div className="md:col-span-2">

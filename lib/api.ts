@@ -392,6 +392,11 @@ export const api = {
     request(`/reports/monthly?year=${year}&month=${month}`, {
       method: "GET",
     }),
+  yearlyReport: (userId: number, year: number) =>
+    request(`/reports/yearly/${userId}?year=${year}`),
+
+  yearlyReportAll: (year: number) =>
+    request(`/reports/yearly?year=${year}`),
 
   reportsUserMonthly: (userId: number, year: number, month: number) =>
     request(`/reports/monthly/${userId}?year=${year}&month=${month}`, {

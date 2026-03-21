@@ -1,369 +1,260 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import PageContainer from "@/components/ui/page-container";
 import PageHeader from "@/components/ui/page-header";
 import SectionCard from "@/components/ui/section-card";
-import AppButton from "@/components/ui/app-button";
 import AlertBox from "@/components/ui/alert-box";
+import SelectInput from "@/components/ui/select-input";
+import Badge from "@/components/ui/badge";
 
-type TimeEntry = {
-  id: number;
-  shift_id: number | null;
-  clock_in: string;
-  clock_out: string | null;
-  break_minutes_applied?: number | null;
-  status?: string | null;
-  source?: string | null;
+type MonthSummary = {
+  month: number;
+  month_label: string;
+  should_minutes: number;
+  worked_minutes: number;
+  diff_minutes: number;
+  cumulative_minutes: number;
+  vacation_days: number;
+  vacation_minutes: number;
+  sick_days: number;
+  absence_days: number;
 };
 
-type Shift = {
-  id: number;
+type YearlyReport = {
   user_id: number;
-  user_name?: string | null;
-  shift_type_id: number;
-  shift_type_name?: string | null;
-  shift_type_color?: string | null;
-  shift_type_counts_as_work?: boolean | null;
-  date: string;
-  start_time: string;
-  end_time: string;
-  is_flexible: boolean;
-  notes?: string | null;
+  user_name: string;
+  year: number;
+  weekly_hours: number;
+  total_should_minutes: number;
+  total_worked_minutes: number;
+  total_diff_minutes: number;
+  total_vacation_days: number;
+  total_sick_days: number;
+  months: MonthSummary[];
 };
 
-function formatLocal(iso?: string | null) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("de-CH");
+type UserOption = { id: number; name?: string | null; first_name?: string | null; last_name?: string | null; email: string; };
+
+function hm(minutes: number, showSign = false): string {
+  const abs = Math.abs(minutes);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  const sign = showSign ? (minutes >= 0 ? "+" : "−") : "";
+  return `${sign}${h}:${String(m).padStart(2, "0")}`;
 }
 
-function minutesBetween(aIso?: string | null, bIso?: string | null) {
-  if (!aIso || !bIso) return 0;
-  const a = new Date(aIso).getTime();
-  const b = new Date(bIso).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
-  const diffMs = Math.max(0, b - a);
-  return Math.floor(diffMs / 60000);
+function userName(u: UserOption) {
+  const full = `${u.first_name?.trim() ?? ""} ${u.last_name?.trim() ?? ""}`.trim();
+  return full || u.name?.trim() || u.email;
 }
 
-function formatHM(minutes: number) {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
+function DiffBadge({ minutes }: { minutes: number }) {
+  if (minutes > 0) return <span style={{ color: "#15803d", fontWeight: 700 }}>{hm(minutes, true)}</span>;
+  if (minutes < 0) return <span style={{ color: "#dc2626", fontWeight: 700 }}>{hm(minutes, true)}</span>;
+  return <span style={{ color: "#64748b", fontWeight: 600 }}>0:00</span>;
 }
 
-function isoDateFromDateTime(value?: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatDateLabel(dateIso: string) {
-  const d = new Date(dateIso);
-  if (Number.isNaN(d.getTime())) return dateIso;
-  return d.toLocaleDateString("de-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function subDaysIso(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function Badge({
-  children,
-  variant = "slate",
-}: {
-  children: React.ReactNode;
-  variant?: "slate" | "green" | "red" | "orange";
-}) {
-  const cls =
-    variant === "green"
-      ? "bg-green-100 text-green-800 ring-green-200"
-      : variant === "red"
-      ? "bg-red-100 text-red-800 ring-red-200"
-      : variant === "orange"
-      ? "bg-orange-100 text-orange-800 ring-orange-200"
-      : "bg-slate-100 text-slate-700 ring-slate-200";
-
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${cls}`}>
-      {children}
-    </span>
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 800, color: color || "#0f172a", marginTop: 6 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{sub}</div>}
+    </div>
   );
 }
 
-export default function ArbeitszeitkontrollePage() {
-  const [items, setItems] = useState<TimeEntry[]>([]);
-  const [myShifts, setMyShifts] = useState<Shift[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [limit, setLimit] = useState(25);
+const TODAY_MONTH = new Date().getMonth() + 1;
+const TODAY_YEAR = new Date().getFullYear();
 
-  async function load() {
+export default function ArbeitszeitkontrollePage() {
+  const [myId, setMyId] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [year, setYear] = useState(TODAY_YEAR);
+  const [report, setReport] = useState<YearlyReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [expandedMonth, setExpandedMonth] = useState<number | null>(TODAY_MONTH);
+
+  useEffect(() => {
+    api.me().then((me) => {
+      setMyId(me.id);
+      setIsAdmin(me.role === "admin");
+      setSelectedUserId(me.id);
+      if (me.role === "admin") {
+        api.users().then((u) => setUsers(Array.isArray(u) ? u : [])).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedUserId) return;
+    loadReport();
+  }, [selectedUserId, year]);
+
+  async function loadReport() {
+    if (!selectedUserId) return;
     setLoading(true);
     setErr(null);
-
     try {
-      const historyData: any = await api.history(limit);
-      const historyList = Array.isArray(historyData)
-        ? historyData
-        : historyData?.items ?? [];
-
-      setItems(historyList);
-
-      const oldestEntry = historyList[historyList.length - 1];
-      const fromDate = oldestEntry?.clock_in
-        ? isoDateFromDateTime(oldestEntry.clock_in)
-        : subDaysIso(60);
-
-      const toDate = todayIso();
-
-      const shiftsData: any = await api.myShifts(fromDate, toDate);
-      const shiftList = Array.isArray(shiftsData) ? shiftsData : [];
-      setMyShifts(shiftList);
+      const data = await api.yearlyReport(selectedUserId, year);
+      setReport(data);
     } catch (e: any) {
-      setErr(e?.message ?? "Konnte Arbeitszeitkontrolle nicht laden");
+      setErr(e?.message ?? "Bericht konnte nicht geladen werden");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load();
-  }, [limit]);
+  const currentMonth = report?.months.find(m => m.month === TODAY_MONTH && report.year === TODAY_YEAR);
+  const lastCompletedMonth = report?.months.filter(m => m.month < TODAY_MONTH || report.year < TODAY_YEAR).slice(-1)[0];
 
-  const shiftsByDate = useMemo(() => {
-    const map = new Map<string, Shift[]>();
-
-    for (const shift of myShifts) {
-      const existing = map.get(shift.date) ?? [];
-      existing.push(shift);
-      map.set(shift.date, existing);
-    }
-
-    return map;
-  }, [myShifts]);
-
-  const entriesWithMeta = useMemo(() => {
-    return items.map((it) => {
-      const day = isoDateFromDateTime(it.clock_in);
-      const shiftsForDay = shiftsByDate.get(day) ?? [];
-
-      const hasAnyShift = shiftsForDay.length > 0;
-      const countsAsWork =
-        !hasAnyShift ||
-        shiftsForDay.some((s) => s.shift_type_counts_as_work !== false);
-
-      const firstShift = shiftsForDay[0] ?? null;
-
-      const rawMin = it.clock_out ? minutesBetween(it.clock_in, it.clock_out) : 0;
-      const br = Number(it.break_minutes_applied ?? 0) || 0;
-      const netMin = it.clock_out ? Math.max(0, rawMin - br) : 0;
-
-      return {
-        ...it,
-        date: day,
-        breakMin: br,
-        netMin,
-        countsAsWork,
-        shiftName: firstShift?.shift_type_name ?? null,
-        shiftColor: firstShift?.shift_type_color ?? null,
-      };
-    });
-  }, [items, shiftsByDate]);
-
-  const totals = useMemo(() => {
-    let totalMin = 0;
-    let totalBreak = 0;
-    let excludedMin = 0;
-
-    for (const it of entriesWithMeta) {
-      if (!it.clock_out) continue;
-
-      totalBreak += it.breakMin;
-
-      if (it.countsAsWork) totalMin += it.netMin;
-      else excludedMin += it.netMin;
-    }
-
-    return { totalMin, totalBreak, excludedMin };
-  }, [entriesWithMeta]);
+  const years = Array.from({ length: 4 }, (_, i) => TODAY_YEAR - i);
 
   return (
     <PageContainer>
       <div className="grid gap-6">
         <PageHeader
           title="Arbeitszeitkontrolle"
-          subtitle="Übersicht deiner letzten Einträge. Nicht anrechenbare Schichten werden separat ausgewiesen."
+          subtitle="Plus/Minus-Stunden, Urlaub und Arbeitszeit-Übersicht."
           actions={
-            <>
-              <label htmlFor="limit" className="text-sm font-semibold text-slate-700">
-                Anzahl
-              </label>
+            <div className="flex items-center gap-3">
+              {isAdmin && users.length > 0 && (
+                <select
+                  value={selectedUserId ?? ""}
+                  onChange={e => setSelectedUserId(Number(e.target.value))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-4 focus:ring-slate-200"
+                >
+                  {users.map(u => <option key={u.id} value={u.id}>{userName(u)}</option>)}
+                </select>
+              )}
               <select
-                id="limit"
-                title="Anzahl Einträge"
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
+                value={year}
+                onChange={e => setYear(Number(e.target.value))}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-4 focus:ring-slate-200"
               >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
-
-              <AppButton type="button" variant="secondary" onClick={load} className="px-4 py-2 text-sm">
-                Aktualisieren
-              </AppButton>
-            </>
+            </div>
           }
         />
 
-        <div className="grid gap-4 sm:grid-cols-4">
-          <SectionCard className="p-5">
-            <div className="text-sm font-semibold text-slate-600">Einträge</div>
-            <div className="mt-2 text-2xl font-extrabold text-slate-900">{items.length}</div>
-          </SectionCard>
+        {err && <AlertBox variant="err">{err}</AlertBox>}
 
-          <SectionCard className="p-5">
-            <div className="text-sm font-semibold text-slate-600">Gesamt (anrechenbar)</div>
-            <div className="mt-2 text-2xl font-extrabold text-slate-900">{formatHM(totals.totalMin)}</div>
-          </SectionCard>
+        {loading && (
+          <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 }}>Lade Bericht…</div>
+        )}
 
-          <SectionCard className="p-5">
-            <div className="text-sm font-semibold text-slate-600">Pausen</div>
-            <div className="mt-2 text-2xl font-extrabold text-slate-900">{formatHM(totals.totalBreak)}</div>
-          </SectionCard>
+        {report && !loading && (
+          <>
+            {/* Kennzahlen */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+              <StatCard
+                label="Plus/Minus gesamt"
+                value={hm(report.total_diff_minutes, true)}
+                sub={`Stand bis heute`}
+                color={report.total_diff_minutes >= 0 ? "#15803d" : "#dc2626"}
+              />
+              <StatCard
+                label="Soll (bisher)"
+                value={hm(report.total_should_minutes)}
+                sub={`${report.weekly_hours}h/Woche`}
+              />
+              <StatCard
+                label="Ist (gearbeitet)"
+                value={hm(report.total_worked_minutes)}
+                sub="inkl. Urlaub & Krankheit"
+              />
+              <StatCard
+                label="Urlaubstage"
+                value={`${report.total_vacation_days}d`}
+                sub="Bezogene Urlaubstage"
+              />
+              <StatCard
+                label="Krankheitstage"
+                value={`${report.total_sick_days}d`}
+                sub={`Jahr ${report.year}`}
+              />
+            </div>
 
-          <SectionCard className="p-5">
-            <div className="text-sm font-semibold text-slate-600">Nicht anrechenbar</div>
-            <div className="mt-2 text-2xl font-extrabold text-slate-900">{formatHM(totals.excludedMin)}</div>
-          </SectionCard>
-        </div>
-
-        <SectionCard
-          title="Historie"
-          right={
-            loading ? (
-              <Badge>Lade…</Badge>
-            ) : err ? (
-              <Badge variant="red">Fehler</Badge>
-            ) : (
-              <Badge variant="green">OK</Badge>
-            )
-          }
-        >
-          {err && (
-            <AlertBox variant="err" className="mb-5">
-              {err}
-            </AlertBox>
-          )}
-
-          <div className="hidden overflow-hidden rounded-xl ring-1 ring-slate-200 md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Datum</th>
-                  <th className="px-4 py-3 font-semibold">Clock-in</th>
-                  <th className="px-4 py-3 font-semibold">Clock-out</th>
-                  <th className="px-4 py-3 font-semibold">Schicht</th>
-                  <th className="px-4 py-3 font-semibold">Pause</th>
-                  <th className="px-4 py-3 font-semibold">Dauer</th>
-                  <th className="px-4 py-3 font-semibold">Wertung</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {entriesWithMeta.map((it) => (
-                  <tr key={it.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 text-slate-900">{formatDateLabel(it.date)}</td>
-                    <td className="px-4 py-3 text-slate-900">{formatLocal(it.clock_in)}</td>
-                    <td className="px-4 py-3 text-slate-900">{formatLocal(it.clock_out)}</td>
-                    <td className="px-4 py-3">
-                      {it.shiftName ? (
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="h-3 w-3 rounded-full ring-1 ring-slate-200"
-                            style={{ backgroundColor: it.shiftColor || "rgb(37 99 235)" }}
-                          />
-                          <span className="text-slate-700">{it.shiftName}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{it.breakMin ? `${it.breakMin} min` : "—"}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">
-                      {it.clock_out ? formatHM(it.netMin) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {it.countsAsWork ? (
-                        <Badge variant="green">Anrechenbar</Badge>
-                      ) : (
-                        <Badge variant="orange">Nicht anrechenbar</Badge>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="grid gap-3 md:hidden">
-            {entriesWithMeta.map((it) => (
-              <div key={it.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-900">{formatDateLabel(it.date)}</div>
-                  {it.countsAsWork ? (
-                    <Badge variant="green">Anrechenbar</Badge>
-                  ) : (
-                    <Badge variant="orange">Nicht anrechenbar</Badge>
-                  )}
-                </div>
-
-                <div className="mt-3 text-sm text-slate-600">
-                  <div>
-                    <span className="font-semibold text-slate-800">Clock-in:</span> {formatLocal(it.clock_in)}
-                  </div>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-800">Clock-out:</span> {formatLocal(it.clock_out)}
-                  </div>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-800">Schicht:</span> {it.shiftName ?? "—"}
-                  </div>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-800">Pause:</span> {it.breakMin ? `${it.breakMin} min` : "—"}
-                  </div>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-800">Dauer:</span> {it.clock_out ? formatHM(it.netMin) : "—"}
-                  </div>
-                </div>
+            {/* Monatsübersicht Tabelle */}
+            <SectionCard title={`Monatsübersicht ${report.year}`} right={<Badge variant="slate">{report.user_name}</Badge>}>
+              <div className="overflow-x-auto">
+                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                      <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: "#475569" }}>Monat</th>
+                      <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#475569" }}>Soll</th>
+                      <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#475569" }}>Ist</th>
+                      <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#475569" }}>+/−</th>
+                      <th style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#475569" }}>Kumuliert</th>
+                      <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#475569" }}>Urlaub</th>
+                      <th style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#475569" }}>Krank</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.months.map((m) => {
+                      const isFuture = m.month > TODAY_MONTH && report.year === TODAY_YEAR;
+                      const isCurrent = m.month === TODAY_MONTH && report.year === TODAY_YEAR;
+                      return (
+                        <tr
+                          key={m.month}
+                          style={{
+                            borderBottom: "1px solid #f1f5f9",
+                            background: isCurrent ? "#f0fdf4" : isFuture ? "#fafafa" : "#fff",
+                            opacity: isFuture ? 0.5 : 1,
+                          }}
+                        >
+                          <td style={{ padding: "10px 12px", fontWeight: isCurrent ? 700 : 500, color: "#0f172a" }}>
+                            {m.month_label}
+                            {isCurrent && <span style={{ marginLeft: 6, fontSize: 10, background: "#dcfce7", color: "#15803d", borderRadius: 4, padding: "1px 5px", fontWeight: 600 }}>Aktuell</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748b" }}>{hm(m.should_minutes)}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", color: "#0f172a" }}>{isFuture ? "–" : hm(m.worked_minutes)}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                            {isFuture ? <span style={{ color: "#94a3b8" }}>–</span> : <DiffBadge minutes={m.diff_minutes} />}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                            {isFuture ? <span style={{ color: "#94a3b8" }}>–</span> : <DiffBadge minutes={m.cumulative_minutes} />}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "center", color: m.vacation_days > 0 ? "#1d9e75" : "#94a3b8" }}>
+                            {m.vacation_days > 0 ? `${m.vacation_days}d` : "–"}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "center", color: m.sick_days > 0 ? "#e24b4a" : "#94a3b8" }}>
+                            {m.sick_days > 0 ? `${m.sick_days}d` : "–"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid #e2e8f0", background: "#f8fafc" }}>
+                      <td style={{ padding: "12px", fontWeight: 700, color: "#0f172a" }}>Total</td>
+                      <td style={{ padding: "12px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{hm(report.total_should_minutes)}</td>
+                      <td style={{ padding: "12px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{hm(report.total_worked_minutes)}</td>
+                      <td style={{ padding: "12px", textAlign: "right", fontWeight: 700 }}><DiffBadge minutes={report.total_diff_minutes} /></td>
+                      <td style={{ padding: "12px", textAlign: "right", fontWeight: 700 }}><DiffBadge minutes={report.total_diff_minutes} /></td>
+                      <td style={{ padding: "12px", textAlign: "center", fontWeight: 700, color: "#1d9e75" }}>{report.total_vacation_days > 0 ? `${report.total_vacation_days}d` : "–"}</td>
+                      <td style={{ padding: "12px", textAlign: "center", fontWeight: 700, color: "#e24b4a" }}>{report.total_sick_days > 0 ? `${report.total_sick_days}d` : "–"}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-            ))}
-          </div>
+            </SectionCard>
 
-          {!loading && !err && entriesWithMeta.length === 0 && (
-            <AlertBox variant="info">
-              Noch keine Einträge vorhanden.
-            </AlertBox>
-          )}
-        </SectionCard>
+            {/* Legende */}
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "#64748b" }}>
+              <div><span style={{ fontWeight: 600, color: "#0f172a" }}>Soll:</span> Arbeitstage × {(report.weekly_hours / 5).toFixed(1)}h/Tag</div>
+              <div><span style={{ fontWeight: 600, color: "#0f172a" }}>Ist:</span> Gestempelte Zeit + Urlaub + Krankheit</div>
+              <div><span style={{ color: "#15803d", fontWeight: 600 }}>+</span> = Überstunden</div>
+              <div><span style={{ color: "#dc2626", fontWeight: 600 }}>−</span> = Minusstunden</div>
+            </div>
+          </>
+        )}
 
         <p className="text-center text-xs text-zinc-400">
           © {new Date().getFullYear()} Workplan by Oswald-IT
