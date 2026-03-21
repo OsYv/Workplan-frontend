@@ -2,18 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import Badge from "@/components/ui/badge";
-import AppButton from "@/components/ui/app-button";
-import AlertBox from "@/components/ui/alert-box";
 
 type Shift = {
   id: number;
   user_id: number;
-  user_name?: string | null;
   shift_type_id: number;
   shift_type_name?: string | null;
   shift_type_color?: string | null;
-  shift_type_counts_as_work?: boolean | null;
   date: string;
   start_time: string;
   end_time: string;
@@ -24,7 +19,6 @@ type Shift = {
 type Absence = {
   id: number;
   user_id: number;
-  user_name?: string | null;
   type: string;
   status: string;
   date_from: string;
@@ -44,22 +38,22 @@ type UserOption = {
 const DEFAULT_COLOR = "#2563eb";
 
 const ABSENCE_TYPES: Record<string, { label: string; color: string }> = {
-  urlaub:        { label: "Urlaub",             color: "#1D9E75" },
-  krankheit:     { label: "Krankheit",          color: "#E24B4A" },
-  feiertag:      { label: "Feiertag",           color: "#378ADD" },
-  weiterbildung: { label: "Weiterbildung",      color: "#7F77DD" },
-  unbezahlt:     { label: "Unbezahlter Urlaub", color: "#888780" },
-  schule:        { label: "Schule",             color: "#BA7517" },
+  urlaub:        { label: "Urlaub",        color: "#1D9E75" },
+  krankheit:     { label: "Krankheit",     color: "#E24B4A" },
+  feiertag:      { label: "Feiertag",      color: "#378ADD" },
+  weiterbildung: { label: "Weiterbildung", color: "#7F77DD" },
+  unbezahlt:     { label: "Unbezahlt",     color: "#888780" },
+  schule:        { label: "Schule",        color: "#BA7517" },
 };
 
 const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const WEEKDAYS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+
+const COL_NAME = 160;
+const COL_DAY = 120;
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-
-function isWeekend(dateIso: string) {
-  const day = new Date(dateIso).getDay();
-  return day === 0 || day === 6;
-}
+function isWeekend(d: string) { const day = new Date(d).getDay(); return day === 0 || day === 6; }
 
 function startOfWeekIso() {
   const d = new Date();
@@ -74,13 +68,8 @@ function addDays(dateIso: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function endOfMonthIso(year: number, month: number) {
-  return new Date(year, month, 0).toISOString().slice(0, 10);
-}
-
 function formatDayShort(dateIso: string) {
-  const d = new Date(dateIso);
-  return d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+  return new Date(dateIso).toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
 }
 
 function displayUser(u: UserOption) {
@@ -103,26 +92,51 @@ function userAvatarColor(seed: string) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function CellContent({ shifts, absences }: { shifts: Shift[]; absences: Absence[] }) {
-  if (shifts.length === 0 && absences.length === 0) {
-    return <span style={{ color: "#cbd5e1", fontSize: 11 }}>–</span>;
+// Kalender-Wochen für Monatsansicht berechnen
+function getCalendarWeeks(year: number, month: number): (string | null)[][] {
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  // Mo=0 .. So=6
+  const startDow = (firstDay.getDay() + 6) % 7;
+  const weeks: (string | null)[][] = [];
+  let week: (string | null)[] = Array(startDow).fill(null);
+
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const iso = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    week.push(iso);
+    if (week.length === 7) { weeks.push(week); week = []; }
   }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+function ShiftPill({ s }: { s: Shift }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {absences.map((a) => {
-        const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
-        return (
-          <div key={`a${a.id}`} style={{ borderLeft: `3px solid ${info.color}`, backgroundColor: `${info.color}22`, borderRadius: 4, padding: "2px 5px", fontSize: 11, fontWeight: 600, color: "#0f172a" }}>
-            {info.label}{a.status === "beantragt" ? " (?)" : ""}
-          </div>
-        );
-      })}
-      {shifts.map((s) => (
-        <div key={s.id} style={{ borderLeft: `3px solid ${s.shift_type_color || DEFAULT_COLOR}`, backgroundColor: `${s.shift_type_color || DEFAULT_COLOR}18`, borderRadius: 4, padding: "2px 5px", fontSize: 11, color: "#0f172a" }}>
-          <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.shift_type_name || "Schicht"}</div>
-          <div style={{ opacity: 0.7 }}>{s.start_time}–{s.end_time}</div>
-        </div>
-      ))}
+    <div style={{ borderLeft: `3px solid ${s.shift_type_color || DEFAULT_COLOR}`, backgroundColor: `${s.shift_type_color || DEFAULT_COLOR}20`, borderRadius: 4, padding: "2px 5px", fontSize: 11, color: "#0f172a", marginBottom: 2 }}>
+      <div style={{ fontWeight: 700 }}>{s.shift_type_name || "Schicht"}</div>
+      <div style={{ opacity: 0.7 }}>{s.start_time}–{s.end_time}</div>
+    </div>
+  );
+}
+
+function AbsencePill({ a }: { a: Absence }) {
+  const info = ABSENCE_TYPES[a.type] ?? { label: a.type, color: "#888780" };
+  return (
+    <div style={{ borderLeft: `3px solid ${info.color}`, backgroundColor: `${info.color}22`, borderRadius: 4, padding: "2px 5px", fontSize: 11, fontWeight: 600, color: "#0f172a", marginBottom: 2 }}>
+      {info.label}{a.status === "beantragt" ? " (?)" : ""}
+    </div>
+  );
+}
+
+function TableCellContent({ shifts, absences }: { shifts: Shift[]; absences: Absence[] }) {
+  if (shifts.length === 0 && absences.length === 0) return <span style={{ color: "#cbd5e1", fontSize: 11 }}>–</span>;
+  return (
+    <div>
+      {absences.map(a => <AbsencePill key={`a${a.id}`} a={a} />)}
+      {shifts.map(s => <ShiftPill key={s.id} s={s} />)}
     </div>
   );
 }
@@ -130,7 +144,6 @@ function CellContent({ shifts, absences }: { shifts: Shift[]; absences: Absence[
 export default function MeineSchichtenPage() {
   const [tab, setTab] = useState<"meine" | "alle">("meine");
   const [view, setView] = useState<"woche" | "monat">("woche");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
   const [weekStart, setWeekStart] = useState(startOfWeekIso());
@@ -142,6 +155,7 @@ export default function MeineSchichtenPage() {
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
   const [allAbsences, setAllAbsences] = useState<Absence[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -153,49 +167,55 @@ export default function MeineSchichtenPage() {
     return Array.from({ length: count }, (_, i) => `${year}-${String(month).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`);
   }, [year, month]);
 
-  const displayDays = view === "woche" ? weekDays : monthDays;
+  const calendarWeeks = useMemo(() => getCalendarWeeks(year, month), [year, month]);
 
-  const visibleDays = useMemo(() => {
-    return displayDays.filter((day) => {
-      if (!isWeekend(day)) return true;
-      if (tab === "meine") {
-        const hasShift = myShifts.some(s => s.date === day);
-        const hasAbsence = myAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
-        return hasShift || hasAbsence;
-      } else {
-        const hasShift = allShifts.some(s => s.date === day);
-        const hasAbsence = allAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
-        return hasShift || hasAbsence;
-      }
-    });
-  }, [displayDays, tab, myShifts, myAbsences, allShifts, allAbsences]);
   const from = view === "woche" ? weekStart : `${year}-${String(month).padStart(2,"0")}-01`;
-  const to = view === "woche" ? weekEnd : endOfMonthIso(year, month);
+  const to = view === "woche" ? weekEnd : new Date(year, month, 0).toISOString().slice(0, 10);
 
   const periodLabel = view === "woche"
     ? `${formatDayShort(weekStart)} – ${formatDayShort(weekEnd)}`
     : `${MONTHS[month - 1]} ${year}`;
 
+  // Wochenansicht: Wochenenden ausblenden wenn leer
+  const visibleWeekDays = useMemo(() => {
+    if (view !== "woche") return weekDays;
+    return weekDays.filter(day => {
+      if (!isWeekend(day)) return true;
+      const shifts = tab === "meine" ? myShifts : allShifts;
+      const absences = tab === "meine" ? myAbsences : allAbsences;
+      return shifts.some(s => s.date === day) || absences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+    });
+  }, [weekDays, view, tab, myShifts, allShifts, myAbsences, allAbsences]);
+
+  const tableWidth = (tab === "alle" ? COL_NAME : 0) + visibleWeekDays.length * COL_DAY;
+
   useEffect(() => {
-    api.me().then((me) => { setMyUserId(me.id); setIsAdmin(me?.role === "admin"); }).catch(() => {});
+    api.me().then(me => setMyUserId(me.id)).catch(() => {});
   }, []);
 
-  useEffect(() => { load(); }, [from, to, tab, isAdmin]);
+  useEffect(() => { load(); }, [from, to, tab]);
 
   async function load() {
     setLoading(true);
     setMsg(null);
     try {
+      const notesP = api.getDayNotes(from, to);
       if (tab === "meine") {
-        const [s, a] = await Promise.all([api.myShifts(from, to), api.myAbsences()]);
+        const [s, a, n] = await Promise.all([api.myShifts(from, to), api.myAbsences(), notesP]);
         setMyShifts(Array.isArray(s) ? s : []);
         setMyAbsences(Array.isArray(a) ? a : []);
+        const nm: Record<string,string> = {};
+        if (Array.isArray(n)) n.forEach((x: any) => { nm[x.date] = x.note; });
+        setDayNotes(nm);
       } else {
-        const promises: Promise<any>[] = [api.shifts(from, to), api.allAbsences({ from, to })];
-        if (users.length === 0) promises.push(api.users());
-        const [s, a, u] = await Promise.all(promises);
+        const extras: Promise<any>[] = [api.shifts(from, to), api.allAbsences({ from, to }), notesP];
+        if (users.length === 0) extras.push(api.users());
+        const [s, a, n, u] = await Promise.all(extras);
         setAllShifts(Array.isArray(s) ? s : []);
         setAllAbsences(Array.isArray(a) ? a : []);
+        const nm: Record<string,string> = {};
+        if (Array.isArray(n)) n.forEach((x: any) => { nm[x.date] = x.note; });
+        setDayNotes(nm);
         if (u) setUsers(Array.isArray(u) ? u.filter((x: UserOption) => x.is_active !== false) : []);
       }
     } catch (e: any) {
@@ -218,21 +238,18 @@ export default function MeineSchichtenPage() {
     else { setYear(new Date().getFullYear()); setMonth(new Date().getMonth() + 1); }
   }
 
-  const groupedUsers = useMemo(() => {
-    // Reihenfolge aus sort_order Feld der API (bereits serverseitig gesetzt)
-    return [...users]
-      .map((u) => ({ id: u.id, name: displayUser(u), sort_order: (u as any).sort_order ?? 0 }))
-      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
-  }, [users]);
+  const groupedUsers = useMemo(() =>
+    [...users].map(u => ({ id: u.id, name: displayUser(u), sort_order: (u as any).sort_order ?? 0 }))
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [users]
+  );
 
-  const COL_NAME = 160;
-  const COL_DAY = 120;
-  const tableWidth = (tab === "meine" ? 0 : COL_NAME) + visibleDays.length * COL_DAY;
+  const today = todayIso();
 
   return (
     <div style={{ padding: "2.5rem 1.25rem" }}>
-      <div style={{ maxWidth: "72rem", margin: "0 auto 1.5rem" }}>
-        {/* Header */}
+      {/* Header */}
+      <div style={{ maxWidth: "72rem", margin: "0 auto" }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0 }}>Schichten</h1>
@@ -253,70 +270,209 @@ export default function MeineSchichtenPage() {
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: 4, width: "fit-content", marginBottom: 20 }}>
           <button onClick={() => setTab("meine")} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: tab === "meine" ? "#fff" : "transparent", color: tab === "meine" ? "#0f172a" : "#64748b", cursor: "pointer", boxShadow: tab === "meine" ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>Meine Schichten</button>
-          {isAdmin && <button onClick={() => setTab("alle")} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: tab === "alle" ? "#fff" : "transparent", color: tab === "alle" ? "#0f172a" : "#64748b", cursor: "pointer", boxShadow: tab === "alle" ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>Alle Mitarbeiter</button>}
+          <button onClick={() => setTab("alle")} style={{ padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", background: tab === "alle" ? "#fff" : "transparent", color: tab === "alle" ? "#0f172a" : "#64748b", cursor: "pointer", boxShadow: tab === "alle" ? "0 1px 3px rgba(0,0,0,0.1)" : "none" }}>Alle Mitarbeiter</button>
         </div>
 
         {msg && <div style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>{msg}</div>}
       </div>
 
-      {/* Tabelle – volle Breite, scrollbar */}
-      <div style={{ overflowX: "auto", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: tableWidth }}>
-          <thead>
-            <tr style={{ background: "#f8fafc" }}>
-              {tab === "alle" && <th style={{ width: COL_NAME, minWidth: COL_NAME, padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: "#f8fafc", zIndex: 2 }}>Mitarbeiter</th>}
-              {visibleDays.map((day) => (
-                <th key={day} style={{ width: COL_DAY, minWidth: COL_DAY, padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: day === todayIso() ? "#15803d" : "#475569", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0", background: day === todayIso() ? "#f0fdf4" : "#f8fafc" }}>
-                  {formatDayShort(day)}
-                  {day === todayIso() && <div style={{ fontSize: 10, fontWeight: 400, color: "#16a34a" }}>Heute</div>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={visibleDays.length + (tab === "alle" ? 1 : 0)} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
-            ) : tab === "meine" ? (
-              <tr>
-                {visibleDays.map((day) => {
-                  const dayShifts = myShifts.filter((s) => s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
-                  const dayAbsences = myAbsences.filter((a) => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
-                  return (
-                    <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minHeight: 80, background: day === todayIso() ? "#f0fdf4" : "#fff" }}>
-                      <CellContent shifts={dayShifts} absences={dayAbsences} />
-                    </td>
-                  );
-                })}
+      {/* ── WOCHENANSICHT (Tabelle wie Dienstplan) ── */}
+      {view === "woche" && (
+        <div style={{ overflowX: "auto", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+          <table style={{ borderCollapse: "collapse", width: `${tableWidth}px`, minWidth: "100%" }}>
+            <thead>
+              <tr style={{ background: "#f8fafc" }}>
+                {tab === "alle" && (
+                  <th style={{ width: COL_NAME, minWidth: COL_NAME, padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: "#f8fafc", zIndex: 2 }}>Mitarbeiter</th>
+                )}
+                {visibleWeekDays.map(day => (
+                  <th key={day} style={{ width: COL_DAY, minWidth: COL_DAY, padding: "6px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: day === today ? "#15803d" : "#475569", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0", background: day === today ? "#f0fdf4" : "#f8fafc", verticalAlign: "top" }}>
+                    {formatDayShort(day)}
+                    {day === today && <div style={{ fontSize: 10, fontWeight: 400, color: "#16a34a" }}>Heute</div>}
+                    {dayNotes[day] && <div style={{ marginTop: 3, fontSize: 10, fontWeight: 500, color: "#15803d", background: "#dcfce7", borderRadius: 4, padding: "1px 4px" }}>{dayNotes[day]}</div>}
+                  </th>
+                ))}
               </tr>
-            ) : groupedUsers.length === 0 ? (
-              <tr><td colSpan={visibleDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
-            ) : (
-              groupedUsers.map((u) => (
-                <tr key={u.id} style={{ background: u.id === myUserId ? "#f0fdf4" : "#fff" }}>
-                  <td style={{ width: COL_NAME, minWidth: COL_NAME, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: u.id === myUserId ? "#f0fdf4" : "#fff", zIndex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div className={`grid place-items-center rounded-full text-xs font-bold flex-shrink-0 ${userAvatarColor(u.name)}`} style={{ width: 32, height: 32, fontSize: 11 }}>{getInitials(u.name)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", lineHeight: 1.3 }}>
-                        {u.name}
-                        {u.id === myUserId && <span style={{ fontSize: 11, color: "#16a34a", marginLeft: 4 }}>(ich)</span>}
-                      </div>
-                    </div>
-                  </td>
-                  {visibleDays.map((day) => {
-                    const dayShifts = allShifts.filter((s) => s.user_id === u.id && s.date === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
-                    const dayAbsences = allAbsences.filter((a) => a.user_id === u.id && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={visibleWeekDays.length + (tab === "alle" ? 1 : 0)} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
+              ) : tab === "meine" ? (
+                <tr>
+                  {visibleWeekDays.map(day => {
+                    const dayShifts = myShifts.filter(s => s.date === day).sort((a,b) => a.start_time.localeCompare(b.start_time));
+                    const dayAbsences = myAbsences.filter(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
                     return (
-                      <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minWidth: COL_DAY, background: day === todayIso() ? (u.id === myUserId ? "#dcfce7" : "#f0fdf4") : (u.id === myUserId ? "#f0fdf4" : "#fff") }}>
-                        <CellContent shifts={dayShifts} absences={dayAbsences} />
+                      <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", background: day === today ? "#f0fdf4" : "#fff", minHeight: 80 }}>
+                        <TableCellContent shifts={dayShifts} absences={dayAbsences} />
                       </td>
                     );
                   })}
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : groupedUsers.length === 0 ? (
+                <tr><td colSpan={visibleWeekDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
+              ) : (
+                groupedUsers.map(u => (
+                  <tr key={u.id} style={{ background: u.id === myUserId ? "#f0fdf4" : "#fff" }}>
+                    <td style={{ width: COL_NAME, minWidth: COL_NAME, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: u.id === myUserId ? "#f0fdf4" : "#fff", zIndex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div className={`grid place-items-center rounded-full text-xs font-bold flex-shrink-0 ${userAvatarColor(u.name)}`} style={{ width: 30, height: 30, fontSize: 11 }}>{getInitials(u.name)}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", lineHeight: 1.3 }}>
+                          {u.name}
+                          {u.id === myUserId && <div style={{ fontSize: 10, color: "#16a34a" }}>(ich)</div>}
+                        </div>
+                      </div>
+                    </td>
+                    {visibleWeekDays.map(day => {
+                      const dayShifts = allShifts.filter(s => s.user_id === u.id && s.date === day).sort((a,b) => a.start_time.localeCompare(b.start_time));
+                      const dayAbsences = allAbsences.filter(a => a.user_id === u.id && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+                      return (
+                        <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minWidth: COL_DAY, background: day === today ? (u.id === myUserId ? "#dcfce7" : "#f0fdf4") : (u.id === myUserId ? "#f0fdf4" : "#fff") }}>
+                          <TableCellContent shifts={dayShifts} absences={dayAbsences} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── MONATSANSICHT MEINE (klassischer Kalender) ── */}
+      {view === "monat" && tab === "meine" && (
+        <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+          {/* Wochentag-Header */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+            {WEEKDAYS.map(wd => (
+              <div key={wd} style={{ padding: "10px 8px", textAlign: "center", fontSize: 12, fontWeight: 700, color: wd === "Sa" || wd === "So" ? "#94a3b8" : "#64748b" }}>{wd}</div>
+            ))}
+          </div>
+
+          {/* Kalenderwochen */}
+          {loading ? (
+            <div style={{ padding: 40, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</div>
+          ) : (
+            calendarWeeks.map((week, wi) => (
+              <div key={wi} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: wi < calendarWeeks.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+                {week.map((day, di) => {
+                  if (!day) return <div key={di} style={{ minHeight: 110, background: "#fafafa", borderRight: di < 6 ? "1px solid #e2e8f0" : "none" }} />;
+
+                  const isToday = day === today;
+                  const isWe = isWeekend(day);
+
+                  const myDayShifts = tab === "meine"
+                    ? myShifts.filter(s => s.date === day).sort((a,b) => a.start_time.localeCompare(b.start_time))
+                    : allShifts.filter(s => s.user_id === myUserId && s.date === day).sort((a,b) => a.start_time.localeCompare(b.start_time));
+                  const myDayAbsences = tab === "meine"
+                    ? myAbsences.filter(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day)
+                    : allAbsences.filter(a => a.user_id === myUserId && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+
+                  const allDayShifts = tab === "alle"
+                    ? allShifts.filter(s => s.date === day)
+                    : [];
+
+                  const note = dayNotes[day];
+
+                  return (
+                    <div key={day} style={{ minHeight: 110, padding: 6, borderRight: di < 6 ? "1px solid #e2e8f0" : "none", background: isToday ? "#f0fdf4" : isWe ? "#fafafa" : "#fff", position: "relative" }}>
+                      {/* Datum */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                        <span style={{
+                          fontSize: 13, fontWeight: 700,
+                          color: isToday ? "#fff" : isWe ? "#94a3b8" : "#334155",
+                          background: isToday ? "#15803d" : "transparent",
+                          borderRadius: "50%", width: 24, height: 24,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0
+                        }}>
+                          {parseInt(day.slice(8))}
+                        </span>
+                        {note && (
+                          <span style={{ fontSize: 10, color: "#15803d", background: "#dcfce7", borderRadius: 4, padding: "1px 5px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "calc(100% - 30px)" }}>{note}</span>
+                        )}
+                      </div>
+
+                      {/* Eigene Schichten / Abwesenheiten */}
+                      {myDayAbsences.map(a => <AbsencePill key={`a${a.id}`} a={a} />)}
+                      {myDayShifts.map(s => <ShiftPill key={s.id} s={s} />)}
+
+                      {/* Alle Mitarbeiter Tab: andere Mitarbeiter kompakt */}
+                      {tab === "alle" && allDayShifts.filter(s => s.user_id !== myUserId).length > 0 && (
+                        <div style={{ marginTop: 3, borderTop: myDayShifts.length > 0 ? "1px dashed #e2e8f0" : "none", paddingTop: myDayShifts.length > 0 ? 3 : 0 }}>
+                          {allDayShifts.filter(s => s.user_id !== myUserId).map(s => (
+                            <div key={s.id} style={{ fontSize: 10, color: "#64748b", borderLeft: `2px solid ${s.shift_type_color || DEFAULT_COLOR}`, paddingLeft: 4, marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {s.user_name || "?"}: {s.shift_type_name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ── MONATSANSICHT ALLE (scrollbare Tabelle wie Dienstplan) ── */}
+      {view === "monat" && tab === "alle" && (() => {
+        const allMonthDays = monthDays.filter(day => {
+          if (!isWeekend(day)) return true;
+          return allShifts.some(s => s.date === day) || allAbsences.some(a => a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+        });
+        const tWidth = COL_NAME + allMonthDays.length * COL_DAY;
+        return (
+          <div style={{ overflowX: "auto", borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+            <table style={{ borderCollapse: "collapse", width: `${tWidth}px`, minWidth: "100%" }}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  <th style={{ width: COL_NAME, minWidth: COL_NAME, padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: "#f8fafc", zIndex: 2 }}>Mitarbeiter</th>
+                  {allMonthDays.map(day => (
+                    <th key={day} style={{ width: COL_DAY, minWidth: COL_DAY, padding: "6px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: day === today ? "#15803d" : isWeekend(day) ? "#94a3b8" : "#475569", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0", background: day === today ? "#f0fdf4" : "#f8fafc", verticalAlign: "top" }}>
+                      {formatDayShort(day)}
+                      {day === today && <div style={{ fontSize: 10, fontWeight: 400, color: "#16a34a" }}>Heute</div>}
+                      {dayNotes[day] && <div style={{ marginTop: 3, fontSize: 10, fontWeight: 500, color: "#15803d", background: "#dcfce7", borderRadius: 4, padding: "1px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dayNotes[day]}</div>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={allMonthDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Lade…</td></tr>
+                ) : groupedUsers.length === 0 ? (
+                  <tr><td colSpan={allMonthDays.length + 1} style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>Keine Mitarbeiter gefunden.</td></tr>
+                ) : (
+                  groupedUsers.map(u => (
+                    <tr key={u.id} style={{ background: u.id === myUserId ? "#f0fdf4" : "#fff" }}>
+                      <td style={{ width: COL_NAME, minWidth: COL_NAME, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", position: "sticky", left: 0, background: u.id === myUserId ? "#f0fdf4" : "#fff", zIndex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div className={`grid place-items-center rounded-full text-xs font-bold flex-shrink-0 ${userAvatarColor(u.name)}`} style={{ width: 30, height: 30, fontSize: 11 }}>{getInitials(u.name)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", lineHeight: 1.3 }}>
+                            {u.name}
+                            {u.id === myUserId && <div style={{ fontSize: 10, color: "#16a34a" }}>(ich)</div>}
+                          </div>
+                        </div>
+                      </td>
+                      {allMonthDays.map(day => {
+                        const dayShifts = allShifts.filter(s => s.user_id === u.id && s.date === day).sort((a,b) => a.start_time.localeCompare(b.start_time));
+                        const dayAbsences = allAbsences.filter(a => a.user_id === u.id && a.status !== "abgelehnt" && a.date_from <= day && a.date_to >= day);
+                        return (
+                          <td key={day} style={{ verticalAlign: "top", padding: 6, borderLeft: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0", minWidth: COL_DAY, background: day === today ? (u.id === myUserId ? "#dcfce7" : "#f0fdf4") : (u.id === myUserId ? "#f0fdf4" : isWeekend(day) ? "#fafafa" : "#fff") }}>
+                            <TableCellContent shifts={dayShifts} absences={dayAbsences} />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       <p style={{ textAlign: "center", fontSize: 11, color: "#a1a1aa", marginTop: 24 }}>
         © {new Date().getFullYear()} Workplan by Oswald-IT
